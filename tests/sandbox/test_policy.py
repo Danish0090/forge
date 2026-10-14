@@ -135,3 +135,22 @@ def test_command_is_last_and_image_precedes_it(policy: SandboxPolicy) -> None:
     args = args_for(policy)
     assert args[-2:] == ["pytest", "-q"]
     assert args[-3] == DIGEST
+
+
+def test_run_never_pulls_from_the_registry(policy: SandboxPolicy) -> None:
+    args = args_for(policy)
+    assert args[args.index("--pull") + 1] == "never"
+
+
+def test_open_file_limit_is_set(policy: SandboxPolicy) -> None:
+    args = args_for(policy)
+    ulimits = [args[i + 1] for i, a in enumerate(args) if a == "--ulimit"]
+    assert any(u.startswith("nofile=") for u in ulimits)
+
+
+def test_tool_dir_with_comma_rejected(tmp_path: Path) -> None:
+    # A comma would split the --mount option string and let the path inject options.
+    tricky = tmp_path / "tool,readonly=false"
+    tricky.mkdir()
+    with pytest.raises(PolicyError):
+        SandboxPolicy(image=DIGEST, tool_dir=tricky)

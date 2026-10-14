@@ -14,6 +14,7 @@ from pathlib import Path
 SANDBOX_USER = "65534:65534"  # nobody:nogroup
 SCRATCH_DIR = "/scratch"
 CODE_DIR = "/app"
+NOFILE_LIMIT = 256  # open file descriptors per run
 
 _DIGEST_REF = re.compile(r"^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$")
 _MEMORY = re.compile(r"^[1-9][0-9]*[bkmg]$")
@@ -37,6 +38,9 @@ class SandboxPolicy:
     def __post_init__(self) -> None:
         if not _DIGEST_REF.match(self.image):
             raise PolicyError(f"image must be pinned by digest (name@sha256:...), got {self.image!r}")
+        if "," in str(self.tool_dir):
+            # The path is spliced into a comma-separated --mount option; a comma would inject options.
+            raise PolicyError(f"tool_dir must not contain a comma: {self.tool_dir}")
         if not self.tool_dir.is_absolute():
             raise PolicyError(f"tool_dir must be absolute: {self.tool_dir}")
         if not self.tool_dir.is_dir():
@@ -68,6 +72,8 @@ def build_docker_args(
         "--rm",
         "--name",
         container_name,
+        "--pull",
+        "never",
         "--network",
         "none",
         "--read-only",
@@ -85,6 +91,8 @@ def build_docker_args(
         str(policy.cpus),
         "--pids-limit",
         str(policy.pids_limit),
+        "--ulimit",
+        f"nofile={NOFILE_LIMIT}:{NOFILE_LIMIT}",
         "--tmpfs",
         f"{SCRATCH_DIR}:rw,noexec,nosuid,nodev,size={policy.scratch_size},mode=1777",
         "--workdir",
