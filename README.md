@@ -2,7 +2,7 @@
 
 **Thesis:** an AI agent can safely extend its own capabilities if every new tool must *earn trust* before it runs.
 
-Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry and the orchestrator are not built yet.
+Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry is built; the orchestrator is not built yet.
 
 Source code: https://github.com/Danish0090/forge
 
@@ -79,6 +79,20 @@ The gate ([src/forge/approval/gate.py](src/forge/approval/gate.py)) shows a huma
 
 Known limit: the staging report is not cryptographically bound to the tool it ran on, so the caller must pass the report from the run it just did. The registry stage should store the approved hash and re-verify it on load.
 
+## The registry (what exists now)
+
+The registry ([src/forge/registry/registry.py](src/forge/registry/registry.py)) is the only place the orchestrator may load tools from. It keeps an SQLite index and its own copy of each approved tool's files. Rules:
+
+- A tool enters only with an approved decision whose hash matches the files being registered. The registry also re-runs the checks itself.
+- It stores a copy, so editing the source folder later cannot change what was approved.
+- Every `get` re-hashes the stored copy. A tool that no longer matches its approved hash is refused, and `list_tools` leaves it out.
+- Tool names are restricted to `[a-z][a-z0-9_]{0,63}`; stored hashes must be 64 hex characters, so a tampered database row cannot point outside the registry folder.
+- A tool folder containing any symlink is refused, so a link cannot pull a host file into the registry.
+- `failing()` reports active tools that no longer match their hash; `list_tools` only leaves them out.
+- Re-registering a name creates a new version; the latest unrevoked one is active. `revoke` withdraws a tool but keeps its files for inspection.
+
+Known limits: the registry cannot prove a decision came from the real gate (it is a plain dataclass), and someone who can write to the registry folder can replace both a tool and its hash. Protect that folder.
+
 ## Run the tests
 
     uv run pytest                                                # unit tests, no Docker needed
@@ -93,10 +107,12 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       checks/         static_scan, injection_scan, hash_pin, pipeline   built, security-critical
       staging/        stager.py                   built
       approval/       diff.py, gate.py            built, security-critical
+      registry/       registry.py                 built, security-critical
     tests/
       sandbox/        policy, runner unit, runner docker tests
       checks/         static scan, injection scan, hash pin, pipeline
       approval/       diff rendering, gate decisions
+      registry/       registration, verification, revoke, tamper cases
       conftest.py     skip logic for Docker tests
 
 ## Glossary
