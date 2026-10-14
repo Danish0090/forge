@@ -31,11 +31,17 @@ DENIED_MODULES = frozenset(
         "importlib",
         "os",
         "sys",
+        "builtins",  # builtins.exec / getattr(builtins, ...) dodge the denied-call rule
+        "posix",  # posix.system runs a shell command without importing os
+        "nt",  # the Windows equivalent
     }
 )
 
 # Builtins that run arbitrary code or bypass the normal import path.
 DENIED_CALLS = frozenset({"eval", "exec", "compile", "__import__", "breakpoint"})
+
+# Builtins that read or write attributes by name. A name built at runtime defeats every other rule.
+DYNAMIC_ACCESS = frozenset({"getattr", "setattr", "delattr"})
 
 # Attributes used in classic sandbox-escape chains (walking up to object/globals).
 DENIED_ATTRIBUTES = frozenset(
@@ -73,6 +79,16 @@ def scan_source(source: str, filename: str = "tool.py") -> list[Finding]:
                 findings.append(
                     Finding("denied-call", f"call to {node.func.id}() is not allowed", line=node.lineno)
                 )
+            elif node.func.id in DYNAMIC_ACCESS and not _plain_name_arg(node):
+                findings.append(
+                    Finding(
+                        "denied-call",
+                        f"{node.func.id}() needs a plain string-literal attribute name",
+                        line=node.lineno,
+                    )
+                )
+        elif isinstance(node, ast.Name) and node.id in DENIED_ATTRIBUTES:
+            findings.append(Finding("denied-attribute", f"name {node.id} is not allowed", line=node.lineno))
         elif isinstance(node, ast.Attribute) and node.attr in DENIED_ATTRIBUTES:
             findings.append(
                 Finding("denied-attribute", f"attribute {node.attr} is not allowed", line=node.lineno)
@@ -80,9 +96,18 @@ def scan_source(source: str, filename: str = "tool.py") -> list[Finding]:
     return findings
 
 
+def _plain_name_arg(call: ast.Call) -> bool:
+    """True when the attribute name is a string literal that is not a dunder."""
+    if len(call.args) < 2:
+        return False
+    name = call.args[1]
+    return isinstance(name, ast.Constant) and isinstance(name.value, str) and not name.value.startswith("__")
+
+
 def _module_finding(module: str, line: int) -> list[Finding]:
     top = module.split(".")[0]
-    if top in DENIED_MODULES:
+    # Private C modules (_socket, _posixsubprocess, _ctypes, ...) are the raw versions of denied ones.
+    if top in DENIED_MODULES or (top.startswith("_") and top != "__future__"):
         return [Finding("denied-import", f"import of {module} is not allowed", line=line)]
     return []
 

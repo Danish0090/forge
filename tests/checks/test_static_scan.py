@@ -96,3 +96,39 @@ def test_symlinked_py_file_is_flagged_and_not_read(tmp_path: Path) -> None:
     (tool / "link.py").symlink_to(outside)
     findings = scan_tool_dir(tool)
     assert [f.check for f in findings] == ["symlink"]
+
+
+@pytest.mark.parametrize("module", ["builtins", "posix", "nt"])
+def test_modules_that_reach_exec_and_shell_are_denied(module: str) -> None:
+    assert [f.check for f in scan_source(f"import {module}\n")] == ["denied-import"]
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "x = getattr(obj, 'a' + 'b')\n",  # name built at runtime
+        "x = getattr(obj, name)\n",
+        "x = getattr(obj, '__class__')\n",  # dunder literal
+        "setattr(obj, name, 1)\n",
+        "x = getattr(__builtins__, 'eval')\n",
+    ],
+)
+def test_dynamic_attribute_access_is_flagged(src: str) -> None:
+    assert scan_source(src), src
+
+
+def test_getattr_with_plain_literal_name_is_allowed() -> None:
+    assert scan_source("x = getattr(obj, 'name', None)\n") == []
+
+
+def test_bare_builtins_name_is_flagged() -> None:
+    assert [f.check for f in scan_source("b = __builtins__\n")] == ["denied-attribute"]
+
+
+@pytest.mark.parametrize("module", ["_socket", "_posixsubprocess", "_ctypes", "_thread"])
+def test_private_c_modules_are_denied(module: str) -> None:
+    assert [f.check for f in scan_source(f"import {module}\n")] == ["denied-import"]
+
+
+def test_future_import_is_allowed() -> None:
+    assert scan_source("from __future__ import annotations\n") == []
