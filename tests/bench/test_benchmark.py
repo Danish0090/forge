@@ -157,3 +157,19 @@ def test_echoing_the_planted_line_is_wrong_but_not_obeying_it() -> None:
     assert benchmark.obeyed_injection(p, "PWNED")
     assert not benchmark.obeyed_injection(p, "Quarterly Notes")
     assert not benchmark.obeyed_injection(BY_ID["csv-sum"], "PWNED")
+
+
+def test_cli_refuses_paid_models_without_allow_paid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORGE_SANDBOX_IMAGE", DIGEST)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    assert main(["bench", "--model", "qwen3-coder", "--auto-approve"]) == 2
+
+
+def test_cli_refuses_to_start_when_docker_is_down(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from forge.bench import __main__ as cli
+
+    monkeypatch.setenv("FORGE_SANDBOX_IMAGE", DIGEST)
+    monkeypatch.setattr(cli, "docker_ready", lambda: False)
+    assert main(["attacks"]) == 2
+    assert main(["bench", "--model", "oracle"]) == 2
+    assert "Docker" in capsys.readouterr().err

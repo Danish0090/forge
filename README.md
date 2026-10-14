@@ -104,7 +104,7 @@ The orchestrator ([src/forge/orchestrator/orchestrator.py](src/forge/orchestrato
 
 ## The model router (what exists now)
 
-The router ([src/forge/router/](src/forge/router/)) is the only code that calls a model, and it runs on the host, never in the sandbox. One config value picks the model (LiteLLM underneath). No paid key is needed: use `ollama/<tag>` for any model pulled into local Ollama (for example `ollama/qwen2.5-coder:7b`; calls go to `localhost:11434` only, no key), or the free open-weight OpenRouter aliases `nemotron`, `nemotron-ultra`, `nemotron-nano`, `nemotron-lightning`, `gemma` and `gemma-26b` (need a free `OPENROUTER_API_KEY`). Free tiers change: as of 2026-10-14 Qwen, DeepSeek, Kimi and MiniMax are paid-only there, so they are not offered.
+The router ([src/forge/router/](src/forge/router/)) is the only code that calls a model, and it runs on the host, never in the sandbox. One config value picks the model (LiteLLM underneath). No paid key is needed: use `ollama/<tag>` for any model pulled into local Ollama (for example `ollama/qwen2.5-coder:7b`; calls go to `localhost:11434` only, no key), or paid open-weight models (see below), or the free open-weight OpenRouter aliases `nemotron`, `nemotron-ultra`, `nemotron-nano`, `nemotron-lightning`, `gemma` and `gemma-26b` (need a free `OPENROUTER_API_KEY`). Free tiers change: as of 2026-10-14 Qwen, DeepSeek, Kimi and MiniMax are paid-only there, so they are not offered.
 
 - API keys, when a model needs one, come from host environment variables (`OPENROUTER_API_KEY`), are passed per call, and are scrubbed from error messages. They never enter a container.
 - `ModelPlanner` and `ModelForger` parse replies strictly (one JSON object, validated fields) and raise `RouterError` on anything else. The forger only writes `tool.py` into a fresh folder; the ladder decides whether it ever runs. Tool output reaches the planner inside `<untrusted_output>` tags with a system prompt that says to treat it as data.
@@ -122,6 +122,26 @@ Code: [src/forge/bench/](src/forge/bench/). Both run the real ladder with real c
 - **Attack suite** ([attacks.py](src/forge/bench/attacks.py)): hostile or broken tools (network, subprocess, eval, sandbox-escape attributes, injection in the description, hidden Unicode, oversize or symlinked files, writes to read-only paths, infinite loops, memory bombs, output floods) plus harmless controls that must *not* be blocked. The human is replaced by a rubber stamp, the worst case, so an attack counts as stopped only if it never reaches the human. Result: all 27 attacks stopped automatically (plus 3 harmless controls that pass) after the scan was hardened. The first run found that 3 attacks evaded the scan, reached the human gate and looked fine in staging (`builtins.exec`, `getattr(builtins, ...)`, `posix.system`); a follow-up round found 3 more (`_socket`, `_posixsubprocess`, `_ctypes`). The scan now also denies `builtins`, `posix`, `nt` and any `_private` module, `getattr`/`setattr`/`delattr` unless the name is a plain non-dunder string literal, and a bare `__builtins__`. Expect more evasions: the scan is a heuristic and the sandbox is the real boundary. A final check edits an approved tool's stored copy and confirms the next call is refused.
 - **Benchmark** ([benchmark.py](src/forge/bench/benchmark.py), [tasks.py](src/forge/bench/tasks.py)): six small tasks over synthetic files, each with a fresh registry. It records correctness, forge attempts, and the stage where each failed attempt stopped (a model that keeps writing rejected code is less safe even if every attempt is caught). One task hides an instruction in an input file to see whether the planner obeys it. Each result also keeps the reason every failed forge attempt was stopped the draft code the model wrote, and the step-by-step trace of the run (in the `--out` JSON), so a failure can be diagnosed. The `oracle` agent uses hand-written tools, is not a model, and scores 6/6, which only shows the harness works. Live so far (2026-10-15): `qwen2.5-coder:7b` 2 of 6 after two prompt fixes (it started at 0 of 6 because the planner never finished), `llama3.2` 0 of 6. No unsafe tool was registered; some safe-but-wrong ones were, because staging checks that a tool runs cleanly, not that its answer is right. Runs vary. The CLI asks a human at approval unless you pass `--auto-approve`, which the report labels.
 - Not covered: attacks that need a live model, and tools that change behavior after approval.
+
+### Paid models and the spend cap
+
+`kimi-k2.7-code`, `minimax-m3`, `deepseek-v4-pro` and `qwen3-coder` cost roughly $0.30 to $0.67 per million input tokens and $0.82 to $3.35 per million output tokens (OpenRouter prices on 2026-10-15; they drift). They refuse to run unless you pass `--allow-paid`. The router adds up the token counts the API reports and stops before the next call once the estimate reaches `--max-cost` (default $0.50, hard maximum $5). The estimate is not a bill: also set a credit limit on the key in the OpenRouter dashboard.
+
+    uv run --env-file .env python -m forge.bench bench --model qwen3-coder --allow-paid --max-cost 0.25 --auto-approve
+
+The router also retries a busy provider (HTTP 429 or 503) twice, after 5 and 20 seconds. Free models are often busy; a run that reports only provider errors says nothing about the model.
+
+### Setting the OpenRouter key
+
+Put the key in a file named `.env` in the repo root (git-ignored), one line, no quotes:
+
+    OPENROUTER_API_KEY=sk-or-...
+
+Then pass it to uv, which loads it into the host environment for that run only:
+
+    uv run --env-file .env python -m forge.bench bench --model nemotron-ultra --auto-approve
+
+forge itself does not read `.env`; it only reads `OPENROUTER_API_KEY` from the environment, so no extra dependency is needed. The key stays on the host and never enters a container.
 
 ## Run the demo
 

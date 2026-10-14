@@ -208,3 +208,115 @@ def test_planner_is_told_to_make_the_need_an_exact_computation() -> None:
     _, backend = plan('{"action":"finish","answer":"x"}')
     system = backend.calls[0]["messages"][0]["content"]
     assert "exact" in system and "print" in system and "never invent" in system.lower()
+
+
+# --- retries --------------------------------------------------------------------------------
+
+
+class Http(Exception):
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"http {status_code}")
+        self.status_code = status_code
+
+
+def retrying(*replies: str | Exception, waits=(5.0, 20.0)):
+    backend = FakeBackend(*replies)
+    slept: list[float] = []
+    r = ModelRouter("nemotron", completion=backend, env={"OPENROUTER_API_KEY": "k"}, retry_waits=waits, sleep=slept.append)
+    return r, backend, slept
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_busy_provider_is_retried_with_backoff(status: int) -> None:
+    r, backend, slept = retrying(Http(status), Http(status), "ok")
+    assert r.complete("s", "u") == "ok"
+    assert len(backend.calls) == 3 and slept == [5.0, 20.0]
+
+
+def test_retries_give_up_after_the_last_wait() -> None:
+    r, backend, slept = retrying(Http(429), Http(429), Http(429))
+    with pytest.raises(RouterError, match="http 429"):
+        r.complete("s", "u")
+    assert len(backend.calls) == 3 and slept == [5.0, 20.0]
+
+
+@pytest.mark.parametrize("status", [400, 401, 404, 500])
+def test_other_errors_fail_fast(status: int) -> None:
+    r, backend, slept = retrying(Http(status), "never reached")
+    with pytest.raises(RouterError):
+        r.complete("s", "u")
+    assert len(backend.calls) == 1 and slept == []
+
+
+def test_retry_waits_are_validated() -> None:
+    with pytest.raises(RouterError):
+        ModelRouter("nemotron", retry_waits=(-1.0,))
+    with pytest.raises(RouterError):
+        ModelRouter("nemotron", retry_waits=(1.0,) * 6)
+
+
+# --- paid models and the spend cap ----------------------------------------------------------
+
+
+def paid_router(*replies: str | Exception, usage=(1_000_000, 1_000_000), **kwargs: Any):
+    backend = FakeBackend(*replies)
+    orig = backend.__call__
+
+    def with_usage(**kw: Any) -> Any:
+        resp = orig(**kw)
+        resp["usage"] = {"prompt_tokens": usage[0], "completion_tokens": usage[1]}
+        return resp
+
+    r = ModelRouter("qwen3-coder", completion=with_usage, env={"OPENROUTER_API_KEY": "k"}, **kwargs)
+    return r, backend
+
+
+def test_paid_aliases_exist_and_carry_prices() -> None:
+    for alias in ("kimi-k2.7-code", "minimax-m3", "deepseek-v4-pro", "qwen3-coder"):
+        spec = resolve_model(alias)
+        assert spec.paid and spec.price_in > 0 and spec.price_out > 0
+        assert spec.key_env == "OPENROUTER_API_KEY" and not spec.litellm_model.endswith(":free")
+    assert not resolve_model("nemotron").paid and not resolve_model("ollama/x").paid
+
+
+def test_paid_model_needs_explicit_opt_in() -> None:
+    with pytest.raises(RouterError, match="paid"):
+        ModelRouter("qwen3-coder", env={"OPENROUTER_API_KEY": "k"})
+
+
+def test_spend_is_estimated_from_usage_and_price() -> None:
+    r, _ = paid_router("a", allow_paid=True, max_cost_usd=5.0)
+    r.complete("s", "u")
+    spec = resolve_model("qwen3-coder")
+    assert r.spent_usd == pytest.approx(spec.price_in + spec.price_out)  # 1M tokens each way
+
+
+def test_cap_stops_calls_before_they_are_made() -> None:
+    r, backend = paid_router("a", "b", allow_paid=True, max_cost_usd=0.5)
+    r.complete("s", "u")  # costs well over the cap
+    with pytest.raises(RouterError, match="spend cap"):
+        r.complete("s", "u")
+    assert len(backend.calls) == 1
+
+
+def test_free_models_never_accrue_cost() -> None:
+    backend = FakeBackend("a")
+    def call(**kw: Any) -> Any:
+        resp = backend(**kw)
+        resp["usage"] = {"prompt_tokens": 10**6, "completion_tokens": 10**6}
+        return resp
+    r = ModelRouter("nemotron", completion=call, env={"OPENROUTER_API_KEY": "k"})
+    r.complete("s", "u")
+    assert r.spent_usd == 0
+
+
+def test_missing_usage_is_not_a_crash() -> None:
+    backend = FakeBackend("a")
+    r = ModelRouter("qwen3-coder", completion=backend, env={"OPENROUTER_API_KEY": "k"}, allow_paid=True)
+    assert r.complete("s", "u") == "a" and r.spent_usd == 0
+
+
+@pytest.mark.parametrize("cap", [0, -1.0, 1000.0])
+def test_cap_must_be_sane(cap: float) -> None:
+    with pytest.raises(RouterError):
+        ModelRouter("nemotron", max_cost_usd=cap)

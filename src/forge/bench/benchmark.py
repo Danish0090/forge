@@ -63,12 +63,20 @@ def oracle_factory(task: Task, input_files: Sequence[str]) -> tuple[Planner, For
     return OraclePlanner(task), OracleForger(task)
 
 
-def model_factory(model: str) -> AgentFactory:
-    def make(task: Task, input_files: Sequence[str]) -> tuple[Planner, Forger]:
-        router = ModelRouter(model)
-        return ModelPlanner(router), ModelForger(router, input_files=input_files)
+class ModelAgents:
+    """Builds a model-backed planner and forger per task. One router is shared, so the spend cap
+    covers the whole benchmark run."""
 
-    return make
+    def __init__(self, model: str, *, allow_paid: bool = False, max_cost_usd: float | None = None) -> None:
+        kwargs = {} if max_cost_usd is None else {"max_cost_usd": max_cost_usd}
+        self.router = ModelRouter(model, allow_paid=allow_paid, **kwargs)
+
+    def __call__(self, task: Task, input_files: Sequence[str]) -> tuple[Planner, Forger]:
+        return ModelPlanner(self.router), ModelForger(self.router, input_files=input_files)
+
+
+def model_factory(model: str, **kwargs: object) -> ModelAgents:
+    return ModelAgents(model, **kwargs)  # type: ignore[arg-type]
 
 
 MAX_SOURCE_CHARS = 4_000
