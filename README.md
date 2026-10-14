@@ -1,19 +1,91 @@
 # forge
 
-Test one claim: an AI agent can safely extend its own capabilities if every new tool must earn trust before it runs.
+**Thesis:** an AI agent can safely extend its own capabilities if every new tool must *earn trust* before it runs.
 
-Status: **Stage 1 (sandbox) done.** Checks, staging, approval, the registry and the orchestrator are not built yet.
+Status: **Stages 1 and 2 (sandbox, checks) done.** Staging, approval, the registry, and the orchestrator are not built yet.
 
-## Sandbox stage
+This README explains what the project is, what has been built so far, and why each piece exists. Read it top to bottom once, then use the "Run the tests" section as a reference.
 
-Every generated-tool run goes into a throwaway Docker container:
-no network, read-only root filesystem, non-root user, all capabilities dropped,
-a single writable `/scratch` tmpfs, CPU/memory/PID limits, a timeout, and capped output.
-The image must be pinned by digest. No host environment variables are passed in.
+## The idea in one paragraph
 
-Run the tests:
+Imagine an AI assistant that notices it's missing a tool, say a log parser. Instead of asking a human to write one, it writes the tool itself. That is useful and also dangerous: the tool is code written by a model, and the model can be wrong, confused, or manipulated by text it reads. So forge never runs a new tool directly. A new tool has to pass a series of gates, the **trust ladder**, and each gate needs *evidence*: passing tests, clean scans, or a human's yes. The agent's own claim that "this tool is safe" never counts.
 
-    uv run pytest                      # unit tests only, no Docker needed
-    FORGE_SANDBOX_IMAGE='python@sha256:<digest>' uv run pytest   # full suite, needs Docker
+## The trust ladder
 
-Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset.
+| Stage | Question it answers | Status |
+|---|---|---|
+| 1. Sandbox | Can the tool hurt the machine when it runs? | **Done** |
+| 2. Checks | Does the code or its description look malicious or changed? | **Done** (heuristic, see below) |
+| 3. Staging | Does it behave on real but read-only inputs? | Not built |
+| 4. Approval | Does a human, reading a diff, say yes? | Not built |
+
+Only a tool that clears all four enters the registry, and only then does the orchestrator load it.
+
+## Stage 1: the sandbox (what exists now)
+
+Every run of a generated tool happens in a **throwaway Docker container**. The container is created for one command and deleted afterward. The settings are in [src/forge/sandbox/policy.py](src/forge/sandbox/policy.py). Each flag exists to block one kind of harm:
+
+| Setting | What it does | Why |
+|---|---|---|
+| `--network none` | No network interface | A tool can't send data out or call an API. |
+| `--read-only` | Root filesystem is read-only | A tool can't modify the image. |
+| `--tmpfs /scratch` | One writable folder, in memory, no execute | The only place a tool can write. It vanishes on exit. |
+| `--user 65534` | Runs as `nobody`, not root | Limits what a compromised process can do. |
+| `--cap-drop ALL` | Removes all Linux capabilities | No raw sockets, no privileged syscalls. |
+| `no-new-privileges` | Blocks setuid escalation | A process can't gain root later. |
+| `--memory`, `--cpus`, `--pids-limit` | Resource caps | A runaway loop or fork bomb can't take the host down. |
+| `--mount ... readonly` | Tool code mounted read-only at `/app` | The tool can't rewrite its own code. |
+| `--pull never` | Never downloads an image during a run | Every run is offline with respect to the registry. |
+| `--ulimit nofile` | Caps open file descriptors | Limits resource abuse. |
+| Timeout | Kills the run after N seconds | Stops infinite loops. |
+| Output cap | Keeps at most 64 KB of stdout and stderr | A noisy tool can't fill host memory. |
+| No env passed | Host environment variables are not forwarded | API keys on the host never reach the sandbox. |
+
+The image must be **pinned by digest** (`name@sha256:...`), not by a tag like `:latest`. A tag can change under you; a digest cannot. The approved image is `python:3.12-slim`:
+
+    python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+
+### How the code is tested
+
+- **Policy tests** ([tests/sandbox/test_policy.py](tests/sandbox/test_policy.py)) check the generated `docker run` command without running anything. They confirm each flag is present and that bad input is rejected.
+- **Runner unit tests** ([tests/sandbox/test_runner_unit.py](tests/sandbox/test_runner_unit.py)) check behavior like "docker is missing" without starting a container.
+- **Docker tests** ([tests/sandbox/test_runner.py](tests/sandbox/test_runner.py)) start real containers and try to break out: reach the network, write outside `/scratch`, read host files, escalate to root, fork-bomb, exhaust memory, spin forever, and leak a fake API key. They also check a **meta-test**: the same probe run under a deliberately weakened policy *must* succeed. If it doesn't, the network test proves nothing.
+
+## Stage 2: checks (what exists now)
+
+Checks run before a tool is allowed anywhere near staging. They read the tool; they never run it. All three run every time, so a reviewer sees every problem at once:
+
+- **Static scan** ([src/forge/checks/static_scan.py](src/forge/checks/static_scan.py)): parses the code with Python's `ast` module and flags imports of risky modules (`socket`, `subprocess`, `os`, ...), calls to `eval`/`exec`, and attribute chains used in sandbox-escape tricks (`__subclasses__`, `__globals__`).
+- **Injection scan** ([src/forge/checks/injection_scan.py](src/forge/checks/injection_scan.py)): looks at the tool's description for phrases like "ignore previous instructions" and for invisible Unicode characters that hide text from a reviewer.
+- **Hash pin** ([src/forge/checks/hash_pin.py](src/forge/checks/hash_pin.py)): a SHA-256 over every file in the tool folder. Once a tool is approved, any change to its files changes the hash and fails the check.
+
+Honest limits: a static scan can be dodged by a determined author (string tricks, indirect imports), and the injection scan only knows phrasings it was written for. These checks catch cheap, common cases early. The sandbox is still the real boundary.
+
+## Run the tests
+
+    uv run pytest                                                # unit tests, no Docker needed
+    FORGE_SANDBOX_IMAGE='python@sha256:a6e34c59...' uv run pytest  # full suite, needs Docker
+
+Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docker daemon isn't running.
+
+## Repo layout
+
+    src/forge/
+      sandbox/        policy.py, runner.py          built, security-critical
+      checks/         (planned) static scan, injection scan, hash pin
+      approval/       (planned) CLI diff and yes/no, security-critical
+    tests/
+      sandbox/        policy, runner unit, runner docker tests
+      conftest.py     skip logic for Docker tests
+
+## Glossary
+
+- **MCP (Model Context Protocol):** a standard way for an agent to call tools. FastMCP is a Python library for writing MCP servers.
+- **Container:** an isolated process environment built from an image. Docker runs them.
+- **Digest:** a SHA-256 fingerprint of an image's contents. Pinning by digest means the exact bytes are fixed.
+- **Capability (Linux):** a fine-grained root privilege, such as opening raw sockets. Dropping them all removes those powers.
+- **Prompt injection:** text in a tool description or input that tries to make the agent do something its owner did not ask for.
+
+## Ground rules
+
+Project rules for contributors and for the AI agent working in this repo are in [CLAUDE.md](CLAUDE.md). The short version: generated tools run only in the sandbox, no credentials go inside it, security-critical code gets human review, and no network calls from the host without asking first.
