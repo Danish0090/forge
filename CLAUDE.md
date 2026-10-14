@@ -64,7 +64,8 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 - Sandbox stage: implemented, tested, committed. Staging adds an optional read-only `inputs_dir` mount at `/inputs` (needs owner review).
 - Checks stage: implemented, tested, committed (`src/forge/checks/`).
 - Staging stage: implemented, tested, committed (`src/forge/staging/`, `tests/staging/`).
-- Approval stage: implemented and tested, uncommitted (`src/forge/approval/`, `tests/approval/`).
+- Approval stage: implemented, tested, committed (`src/forge/approval/`, `tests/approval/`).
+- Static scan host-safety hardening (size cap, symlink flag, parser-crash findings): implemented, tested, committed.
 - Not built: registry, orchestrator, model router, benchmark, attack suite.
 
 ## Git

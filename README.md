@@ -57,7 +57,7 @@ The image must be **pinned by digest** (`name@sha256:...`), not by a tag like `:
 
 Checks run before a tool is allowed anywhere near staging. They read the tool; they never run it. All three run every time, so a reviewer sees every problem at once:
 
-- **Static scan** ([src/forge/checks/static_scan.py](src/forge/checks/static_scan.py)): parses the code with Python's `ast` module and flags imports of risky modules (`socket`, `subprocess`, `os`, ...), calls to `eval`/`exec`, and attribute chains used in sandbox-escape tricks (`__subclasses__`, `__globals__`).
+- **Static scan** ([src/forge/checks/static_scan.py](src/forge/checks/static_scan.py)): parses the code with Python's `ast` module and flags imports of risky modules (`socket`, `subprocess`, `os`, ...), calls to `eval`/`exec`, and attribute chains used in sandbox-escape tricks (`__subclasses__`, `__globals__`). It also protects the host: files over 256 KB and symlinked `.py` files are flagged without being read, and parser crashes (extreme nesting, null bytes) become findings instead of exceptions.
 - **Injection scan** ([src/forge/checks/injection_scan.py](src/forge/checks/injection_scan.py)): looks at the tool's description for phrases like "ignore previous instructions" and for invisible Unicode characters that hide text from a reviewer.
 - **Hash pin** ([src/forge/checks/hash_pin.py](src/forge/checks/hash_pin.py)): a SHA-256 over every file in the tool folder. Once a tool is approved, any change to its files changes the hash and fails the check.
 

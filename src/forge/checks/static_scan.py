@@ -57,6 +57,9 @@ def scan_source(source: str, filename: str = "tool.py") -> list[Finding]:
         tree = ast.parse(source, filename=filename)
     except SyntaxError as exc:
         return [Finding("syntax", f"does not parse: {exc.msg}", line=exc.lineno)]
+    except (RecursionError, MemoryError, ValueError):
+        # Hostile input (extreme nesting, null bytes) must fail the scan, not crash the host.
+        return [Finding("unparseable", "parser could not handle this source")]
 
     findings: list[Finding] = []
     for node in ast.walk(tree):
@@ -84,11 +87,21 @@ def _module_finding(module: str, line: int) -> list[Finding]:
     return []
 
 
+# A generated tool has no reason to be large; a huge file is a parser-exhaustion attempt.
+MAX_FILE_BYTES = 256 * 1024
+
+
 def scan_tool_dir(tool_dir: Path) -> list[Finding]:
     """Scan every .py file under `tool_dir`. Paths in findings are relative and use forward slashes."""
     findings: list[Finding] = []
     for py_file in sorted(tool_dir.rglob("*.py")):
         rel = py_file.relative_to(tool_dir).as_posix()
+        if py_file.is_symlink():
+            findings.append(Finding("symlink", "symlinks are not allowed", path=rel))
+            continue
+        if py_file.stat().st_size > MAX_FILE_BYTES:
+            findings.append(Finding("file-too-large", f"over {MAX_FILE_BYTES} bytes", path=rel))
+            continue
         source = py_file.read_text(encoding="utf-8", errors="replace")
         for finding in scan_source(source, filename=rel):
             findings.append(replace(finding, path=rel))

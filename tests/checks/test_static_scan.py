@@ -68,3 +68,31 @@ def test_scan_tool_dir_reads_every_python_file(tmp_path: Path) -> None:
 
     assert len(findings) == 1
     assert findings[0].path == "lib/bad.py"
+
+
+def test_deeply_nested_code_is_a_finding_not_a_crash() -> None:
+    src = "x = " + "(" * 5000 + "1" + ")" * 5000 + "\n"
+    findings = scan_source(src)
+    assert [f.check for f in findings] and findings[0].check in {"syntax", "unparseable"}
+
+
+def test_null_bytes_are_a_finding_not_a_crash() -> None:
+    findings = scan_source("x = 1\0\n")
+    assert [f.check for f in findings]
+
+
+def test_oversized_file_is_flagged_and_not_parsed(tmp_path: Path) -> None:
+    (tmp_path / "big.py").write_text("x = 1\n" * 200_000)
+    findings = scan_tool_dir(tmp_path)
+    assert [f.check for f in findings] == ["file-too-large"]
+    assert findings[0].path == "big.py"
+
+
+def test_symlinked_py_file_is_flagged_and_not_read(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.py"
+    outside.write_text("import socket\n")
+    tool = tmp_path / "tool"
+    tool.mkdir()
+    (tool / "link.py").symlink_to(outside)
+    findings = scan_tool_dir(tool)
+    assert [f.check for f in findings] == ["symlink"]
