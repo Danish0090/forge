@@ -2,7 +2,7 @@
 
 **Thesis:** an AI agent can safely extend its own capabilities if every new tool must *earn trust* before it runs.
 
-Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry is built; the orchestrator is not built yet.
+Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry and the orchestrator core are built; the model router (the real planner and forger) is not.
 
 Source code: https://github.com/Danish0090/forge
 
@@ -93,6 +93,15 @@ The registry ([src/forge/registry/registry.py](src/forge/registry/registry.py)) 
 
 Known limits: the registry cannot prove a decision came from the real gate (it is a plain dataclass), and someone who can write to the registry folder can replace both a tool and its hash. Protect that folder.
 
+## The orchestrator (what exists now)
+
+The orchestrator ([src/forge/orchestrator/orchestrator.py](src/forge/orchestrator/orchestrator.py)) is the loop. Each step it reloads the registry, asks a **planner** for the next action, and does one of three things: call an approved tool, report the answer, or hit a capability gap. On a gap it asks the **forger** for a draft tool and takes it up the ladder in fixed order: checks, staging in the sandbox, human approval, registry. Only then can the planner call it.
+
+- The planner and forger are interfaces (`Protocol`s). Both will be model-backed, so their output is treated as untrusted data. Tests use scripted ones; no model or network is involved yet.
+- Tools run only from the registry (re-hashed on every load) and only in the sandbox. Arguments go in as one JSON argv element, capped at 8 KB. The stored copy is hashed again after the run, and output is discarded if it changed.
+- Every failure (forger crash, failed checks, failed staging, human no, tampered tool, bad call) becomes an observation the planner sees. Failed evidence never reaches the human.
+- Limits: at most 10 steps and 2 forge attempts per run (both configurable). Tool output is length-capped, but it is still untrusted text; the planner prompt must treat it as data.
+
 ## Run the tests
 
     uv run pytest                                                # unit tests, no Docker needed
@@ -108,11 +117,13 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       staging/        stager.py                   built
       approval/       diff.py, gate.py            built, security-critical
       registry/       registry.py                 built, security-critical
+      orchestrator/   orchestrator.py             built, security-critical
     tests/
       sandbox/        policy, runner unit, runner docker tests
       checks/         static scan, injection scan, hash pin, pipeline
       approval/       diff rendering, gate decisions
       registry/       registration, verification, revoke, tamper cases
+      orchestrator/   loop, forge-up-the-ladder, budgets, tamper and failure cases
       conftest.py     skip logic for Docker tests
 
 ## Glossary

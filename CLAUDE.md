@@ -54,11 +54,13 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
                          __init__.py (run_checks pipeline, runs all checks)
     src/forge/approval/  diff.py (safe diff render), gate.py (yes/no decision)
     src/forge/registry/  registry.py (SQLite index + verified copies of approved tools)
+    src/forge/orchestrator/  orchestrator.py (loop: plan -> call tool or forge one up the ladder)
     tests/sandbox/       test_policy.py (no Docker), test_runner_unit.py (no Docker),
                          test_runner.py (real containers, marked `docker`)
     tests/checks/        test_static_scan.py, test_injection_scan.py,
                          test_hash_pin.py, test_pipeline.py (no Docker)
     tests/registry/      test_registry.py (no Docker)
+    tests/orchestrator/  test_orchestrator.py (no Docker, sandbox faked)
     tests/conftest.py    skips Docker tests unless the daemon and image are present
 
 ## Status
@@ -69,7 +71,8 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 - Approval stage: implemented, tested, committed (`src/forge/approval/`, `tests/approval/`).
 - Static scan host-safety hardening (size cap, symlink flag, parser-crash findings): implemented, tested, committed.
 - Registry: implemented, tested, committed (`src/forge/registry/`, `tests/registry/`).
-- Not built: orchestrator, model router, benchmark, attack suite.
+- Orchestrator: implemented, tested, committed (`src/forge/orchestrator/`, `tests/orchestrator/`). Planner and Forger are Protocols; no model-backed versions yet.
+- Not built: model router (planner/forger implementations), benchmark, attack suite.
 
 ## Git
 
