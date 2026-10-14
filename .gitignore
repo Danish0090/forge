@@ -6,3 +6,5 @@ __pycache__/
 .forge-demo/
 .env
 .env.*
+# benchmark result files written with --out
+/*.json
