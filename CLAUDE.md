@@ -49,17 +49,25 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 ## Layout
 
     src/forge/sandbox/   policy.py (flags + validation), runner.py (runs one container)
+    src/forge/checks/    finding.py (shared result type), static_scan.py (AST),
+                         injection_scan.py (heuristic), hash_pin.py (SHA-256),
+                         __init__.py (run_checks pipeline, runs all checks)
     tests/sandbox/       test_policy.py (no Docker), test_runner_unit.py (no Docker),
                          test_runner.py (real containers, marked `docker`)
+    tests/checks/        test_static_scan.py, test_injection_scan.py,
+                         test_hash_pin.py, test_pipeline.py (no Docker)
     tests/conftest.py    skips Docker tests unless the daemon and image are present
 
 ## Status
 
-- Sandbox stage: implemented and tested. Commit `68b454b`, plus uncommitted hardening (`--pull never`, nofile ulimit, comma guard in `tool_dir`).
-- Checks stage: implemented and tested, uncommitted (`src/forge/checks/`, `tests/checks/`). Static scan (AST), injection scan (heuristic), hash pin (SHA-256 of the tool folder), and a pipeline that reports all findings.
+- Sandbox stage: done. Hardening (`--pull never`, nofile ulimit, comma guard in `tool_dir`) is committed.
+- Checks stage: done. Static scan (AST), injection scan (heuristic), hash pin (SHA-256 of the tool folder), and a pipeline that reports all findings.
 - Not built: staging, approval, registry, orchestrator, model router, benchmark, attack suite.
+- Remote: https://github.com/Danish0090/forge (public), branch `main`.
 
 ## Git
 
 - Commit as the repo's configured git user. Do NOT add `Co-Authored-By` or other AI attribution lines to commits or PR descriptions.
 - Do not commit or push unless asked.
+- Do not rewrite published history (no force-push, no filter-branch) without explicit permission.
+- `.DS_Store` is ignored.

@@ -4,6 +4,8 @@
 
 Status: **Stages 1 and 2 (sandbox, checks) done.** Staging, approval, the registry, and the orchestrator are not built yet.
 
+Source code: https://github.com/Danish0090/forge
+
 This README explains what the project is, what has been built so far, and why each piece exists. Read it top to bottom once, then use the "Run the tests" section as a reference.
 
 ## The idea in one paragraph
@@ -72,10 +74,11 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
 
     src/forge/
       sandbox/        policy.py, runner.py          built, security-critical
-      checks/         (planned) static scan, injection scan, hash pin
+      checks/         static_scan, injection_scan, hash_pin, pipeline   built, security-critical
       approval/       (planned) CLI diff and yes/no, security-critical
     tests/
       sandbox/        policy, runner unit, runner docker tests
+      checks/         static scan, injection scan, hash pin, pipeline
       conftest.py     skip logic for Docker tests
 
 ## Glossary
