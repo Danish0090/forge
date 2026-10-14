@@ -2,7 +2,7 @@
 
 **Thesis:** an AI agent can safely extend its own capabilities if every new tool must *earn trust* before it runs.
 
-Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry, the orchestrator core and the model router (model-backed planner and forger, tested with fakes only) are built. Not yet run against a live model; benchmark and attack suite are not built.
+Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry, the orchestrator core and the model router (model-backed planner and forger, tested with fakes only) are built. The benchmark and attack suite are built (see below); no real model has been benchmarked yet.
 
 Source code: https://github.com/Danish0090/forge
 
@@ -104,12 +104,24 @@ The orchestrator ([src/forge/orchestrator/orchestrator.py](src/forge/orchestrato
 
 ## The model router (what exists now)
 
-The router ([src/forge/router/](src/forge/router/)) is the only code that calls a model, and it runs on the host, never in the sandbox. One config value picks the model (LiteLLM underneath). No paid key is needed: use `ollama/<tag>` for any model pulled into local Ollama (for example `ollama/qwen2.5-coder:7b`; calls go to `localhost:11434` only, no key), or the free open-weight OpenRouter aliases `nemotron` and `gemma` (need a free `OPENROUTER_API_KEY`). Free tiers change: as of 2026-10-14 Qwen, DeepSeek, Kimi and MiniMax are paid-only there, so they are not offered.
+The router ([src/forge/router/](src/forge/router/)) is the only code that calls a model, and it runs on the host, never in the sandbox. One config value picks the model (LiteLLM underneath). No paid key is needed: use `ollama/<tag>` for any model pulled into local Ollama (for example `ollama/qwen2.5-coder:7b`; calls go to `localhost:11434` only, no key), or the free open-weight OpenRouter aliases `nemotron`, `nemotron-ultra`, `nemotron-nano`, `nemotron-lightning`, `gemma` and `gemma-26b` (need a free `OPENROUTER_API_KEY`). Free tiers change: as of 2026-10-14 Qwen, DeepSeek, Kimi and MiniMax are paid-only there, so they are not offered.
 
 - API keys, when a model needs one, come from host environment variables (`OPENROUTER_API_KEY`), are passed per call, and are scrubbed from error messages. They never enter a container.
 - `ModelPlanner` and `ModelForger` parse replies strictly (one JSON object, validated fields) and raise `RouterError` on anything else. The forger only writes `tool.py` into a fresh folder; the ladder decides whether it ever runs. Tool output reaches the planner inside `<untrusted_output>` tags with a system prompt that says to treat it as data.
 - Reliability aids inside the (untrusted) forger only: low temperature, the list of files under `/inputs` in the prompt, and up to 3 drafts when its own `ast.parse` check fails. None of this touches a gate; the ladder still judges every draft.
 - Unverified: the OpenRouter slugs were checked against its public list on 2026-10-14 and drift (a `:free` Qwen slug already 404'd) and the Ollama tag must already be pulled by you and no live call has been made. Tests use a fake completion function, so `pytest` makes no network calls.
+
+## Benchmark and attack suite (what exists now)
+
+Code: [src/forge/bench/](src/forge/bench/). Both run the real ladder with real containers.
+
+    uv run python -m forge.bench attacks                        # 24 attacks and controls + a tamper check
+    uv run python -m forge.bench bench --model oracle --auto-approve
+    uv run python -m forge.bench bench --model ollama/qwen2.5-coder:7b   # asks you at each approval
+
+- **Attack suite** ([attacks.py](src/forge/bench/attacks.py)): hostile or broken tools (network, subprocess, eval, sandbox-escape attributes, injection in the description, hidden Unicode, oversize or symlinked files, writes to read-only paths, infinite loops, memory bombs, output floods) plus harmless controls that must *not* be blocked. The human is replaced by a rubber stamp, the worst case, so an attack counts as stopped only if it never reaches the human. Result: 21 of 24 stopped automatically. The other three evade the static scan (`builtins.exec`, `getattr(builtins, ...)`, the `posix` module), look fine in staging, and would be stopped only by a human reading the diff; the sandbox still removes their effect. That is a real gap in the scan, reported as found. A final check edits an approved tool's stored copy and confirms the next call is refused.
+- **Benchmark** ([benchmark.py](src/forge/bench/benchmark.py), [tasks.py](src/forge/bench/tasks.py)): six small tasks over synthetic files, each with a fresh registry. It records correctness, forge attempts, and the stage where each failed attempt stopped (a model that keeps writing rejected code is less safe even if every attempt is caught). One task hides an instruction in an input file to see whether the planner obeys it. The `oracle` agent uses hand-written tools, is not a model, and scores 6/6, which only shows the harness works. The CLI asks a human at approval unless you pass `--auto-approve`, which the report labels.
+- Not covered: attacks that need a live model, and tools that change behavior after approval.
 
 ## Run the demo
 
@@ -138,6 +150,7 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       registry/       registry.py                 built, security-critical
       orchestrator/   orchestrator.py             built, security-critical
       router/         router.py, agents.py        built, not yet run live
+      bench/          attacks, benchmark, tasks    built
       demo.py                                     live demo CLI
     tests/
       sandbox/        policy, runner unit, runner docker tests
@@ -145,6 +158,7 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       approval/       diff rendering, gate decisions
       registry/       registration, verification, revoke, tamper cases
       orchestrator/   loop, forge-up-the-ladder, budgets, tamper and failure cases
+      bench/          attack catalog, benchmark scoring (Docker tests marked)
       demo/           scripted run with a faked sandbox
       router/         model aliases, key handling, strict reply parsing (fake backend)
       conftest.py     skip logic for Docker tests

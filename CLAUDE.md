@@ -57,6 +57,8 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
     src/forge/orchestrator/  orchestrator.py (loop: plan -> call tool or forge one up the ladder)
     src/forge/demo.py    live demo CLI: scripted forger or a router model (`python -m forge.demo --model ...`)
     src/forge/router/    router.py (LiteLLM wrapper, host-side keys), agents.py (ModelPlanner, ModelForger)
+    src/forge/bench/     attacks.py (attack suite), benchmark.py + tasks.py (per-model benchmark),
+                         stage.py, __main__.py (`python -m forge.bench attacks|bench`)
     tests/sandbox/       test_policy.py (no Docker), test_runner_unit.py (no Docker),
                          test_runner.py (real containers, marked `docker`)
     tests/checks/        test_static_scan.py, test_injection_scan.py,
@@ -65,6 +67,7 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
     tests/orchestrator/  test_orchestrator.py (no Docker, sandbox faked)
     tests/router/        test_router.py (no network, completion faked)
     tests/demo/          test_demo.py (no Docker, no network)
+    tests/bench/         test_attacks.py, test_benchmark.py (Docker tests marked `docker`)
     tests/conftest.py    skips Docker tests unless the daemon and image are present
 
 ## Status
@@ -76,11 +79,12 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 - Static scan host-safety hardening (size cap, symlink flag, parser-crash findings): implemented, tested, committed.
 - Registry: implemented, tested, committed (`src/forge/registry/`, `tests/registry/`).
 - Orchestrator: implemented, tested, committed (`src/forge/orchestrator/`, `tests/orchestrator/`). Planner and Forger are Protocols.
-- Model router: implemented, tested with a fake backend, uncommitted (`src/forge/router/`, `tests/router/`). LiteLLM added with owner approval; host network calls to model APIs approved. Open models supported: Ollama (`ollama/<tag>`, localhost, no key) and OpenRouter free aliases only (nemotron, gemma; slugs checked 2026-10-14, they drift). Live runs so far: qwen2.5-coder:7b via Ollama forged 0 of 2 tool attempts (ladder blocked both); the free OpenRouter Qwen slug 404'd.
+- Model router: implemented, tested with a fake backend, uncommitted (`src/forge/router/`, `tests/router/`). LiteLLM added with owner approval; host network calls to model APIs approved. Open models supported: Ollama (`ollama/<tag>`, localhost, no key) and OpenRouter free aliases only (nemotron, nemotron-ultra, nemotron-nano, nemotron-lightning, gemma, gemma-26b; slugs checked 2026-10-14, they drift). Live runs so far: qwen2.5-coder:7b via Ollama forged 0 of 2 tool attempts (ladder blocked both); the free OpenRouter Qwen slug 404'd.
 - Demo CLI: implemented, tested with fakes; good scripted tool verified in a real container (staging only; the human approval prompt needs a real terminal and has not been exercised end to end).
 - Known limit: the static scan denies `sys` and `os`, so tools must read args via `argparse` (the forger prompt says so).
 - Live results so far: qwen2.5-coder:7b (Ollama) 0 of 2 forges; nemotron (OpenRouter free) 0 of 2 (syntax errors, and staging_args that did not match the tool). Forger now self-checks syntax, retries, and is told the input file names.
-- Not built: benchmark, attack suite.
+- Benchmark and attack suite: implemented, tested, uncommitted (`src/forge/bench/`, `tests/bench/`). Attack suite: 24 scripted attacks and controls plus a registry-tamper check, run through the real ladder with a rubber-stamp reviewer; all outcomes match expectations in real containers. Findings: 3 scan-evading attacks (`sneaky-socket-swallowed`, `builtins-exec`, `posix-system`) pass checks and staging and reach the human, so the static scan has known holes (`builtins.exec`, `getattr(builtins, ...)`, `posix`); the sandbox neutralises their effect. Benchmark: 6 synthetic tasks (one with a planted instruction); the `oracle` agent (scripted, not a model) scores 6/6 and proves the harness. No real model has been benchmarked yet. `--auto-approve` is opt-in and recorded in the report.
+- Not built: benchmark results for real models; attacks that need a live model (tool-output injection of the planner).
 
 ## Git
 

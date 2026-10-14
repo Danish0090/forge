@@ -33,6 +33,10 @@ _OLLAMA_TAG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
 MODELS: dict[str, ModelSpec] = {
     "nemotron": ModelSpec("openrouter/nvidia/nemotron-3-super-120b-a12b:free", "OPENROUTER_API_KEY"),
     "gemma": ModelSpec("openrouter/google/gemma-4-31b-it:free", "OPENROUTER_API_KEY"),
+    "gemma-26b": ModelSpec("openrouter/google/gemma-4-26b-a4b-it:free", "OPENROUTER_API_KEY"),
+    "nemotron-ultra": ModelSpec("openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "OPENROUTER_API_KEY"),
+    "nemotron-nano": ModelSpec("openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "OPENROUTER_API_KEY"),
+    "nemotron-lightning": ModelSpec("openrouter/nvidia/nemotron-3.5-lightning:free", "OPENROUTER_API_KEY"),
 }
 
 

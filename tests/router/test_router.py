@@ -40,7 +40,7 @@ def tool(name: str = "word_count") -> RegisteredTool:
 
 
 def test_aliases_resolve_and_unknown_models_are_rejected() -> None:
-    for alias in ("nemotron", "gemma"):
+    for alias in ("nemotron", "gemma", "gemma-26b", "nemotron-ultra", "nemotron-nano", "nemotron-lightning"):
         spec = resolve_model(alias)
         assert spec.key_env == "OPENROUTER_API_KEY" and spec.litellm_model.endswith(":free")
     with pytest.raises(RouterError):
