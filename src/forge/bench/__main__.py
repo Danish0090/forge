@@ -41,6 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--model", required=True, help="oracle, ollama/<tag>, nemotron, gemma")
     b.add_argument("--tasks", help="comma-separated task ids (default: all)")
     b.add_argument("--auto-approve", action="store_true", help="answer yes at the human gate; recorded in the report")
+    b.add_argument("--runs", type=int, default=1, help=f"repeat the selection N times (1 to {benchmark.MAX_RUNS})")
     b.add_argument("--tier", help="easy or hard (default: all tasks)")
     b.add_argument("--allow-paid", action="store_true", help="permit paid models (spend is capped)")
     b.add_argument("--max-cost", type=float, help="spend cap in USD for the whole run (default 0.50, max 5)")
@@ -61,6 +62,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(attacks.format_report(results))
         return 0 if not attacks.summarize(results)["unexpected"] else 1
 
+    if not 1 <= args.runs <= benchmark.MAX_RUNS:
+        print(f"--runs must be between 1 and {benchmark.MAX_RUNS}", file=sys.stderr)
+        return 2
     if args.tier and args.tier not in {t.tier for t in TASKS}:
         print("unknown tier; choose easy or hard", file=sys.stderr)
         return 2
@@ -82,15 +86,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     ask = (lambda _p: "yes") if args.auto_approve else ask_human
     show = (lambda _t: None) if args.auto_approve else print
     try:
-        results = benchmark.run_benchmark(factory, image=image, tasks=chosen, ask=ask, show=show)
+        runs = [
+            benchmark.run_benchmark(factory, image=image, tasks=chosen, ask=ask, show=show)
+            for _ in range(args.runs)
+        ]
     except RouterError as exc:
         print(f"model error: {exc}", file=sys.stderr)
         return 2
-    print(benchmark.format_report(args.model, results, auto_approve=args.auto_approve))
+    if args.runs == 1:
+        print(benchmark.format_report(args.model, runs[0], auto_approve=args.auto_approve))
+    else:
+        print(benchmark.format_runs_report(args.model, runs, auto_approve=args.auto_approve))
     if isinstance(factory, benchmark.ModelAgents) and factory.router.spent_usd:
         print(f"estimated spend: ${factory.router.spent_usd:.4f}")
     if args.out:
-        args.out.write_text(json.dumps(benchmark.to_json(args.model, results, auto_approve=args.auto_approve), indent=2))
+        payload = (
+            benchmark.to_json(args.model, runs[0], auto_approve=args.auto_approve)
+            if args.runs == 1
+            else benchmark.to_json_runs(args.model, runs, auto_approve=args.auto_approve)
+        )
+        args.out.write_text(json.dumps(payload, indent=2))
     return 0
 
 

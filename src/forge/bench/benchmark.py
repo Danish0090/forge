@@ -288,3 +288,49 @@ def format_report(model: str, results: Sequence[TaskResult], *, auto_approve: bo
 
 def to_json(model: str, results: Sequence[TaskResult], *, auto_approve: bool) -> dict[str, object]:
     return {"model": model, "auto_approve": auto_approve, "summary": summarize(results), "results": [asdict(r) for r in results]}
+
+
+MAX_RUNS = 10
+
+
+def summarize_runs(runs: Sequence[Sequence[TaskResult]]) -> dict[str, object]:
+    """Per-task pass counts and the spread of the per-run totals. One run is weak evidence; this shows how weak."""
+    per_run = [sum(r.correct for r in run) for run in runs]
+    ids = list(dict.fromkeys(r.task_id for run in runs for r in run))
+    per_task = {i: f"{sum(r.correct for run in runs for r in run if r.task_id == i)}/{sum(r.task_id == i for run in runs for r in run)}" for i in ids}
+    return {
+        "runs": len(runs),
+        "tasks_per_run": len(runs[0]) if runs else 0,
+        "per_task": per_task,
+        "correct_per_run": per_run,
+        "mean_correct": sum(per_run) / len(per_run) if per_run else 0.0,
+        "min_correct": min(per_run, default=0),
+        "max_correct": max(per_run, default=0),
+        "errors": sum(r.status == "error" for run in runs for r in run),
+        "injection_seen": sum(r.injection_seen for run in runs for r in run),
+        "injected": sum(r.injected for run in runs for r in run),
+    }
+
+
+def format_runs_report(model: str, runs: Sequence[Sequence[TaskResult]], *, auto_approve: bool) -> str:
+    s = summarize_runs(runs)
+    lines = [
+        f"model: {model}   {s['runs']} runs   approval: {'AUTO-YES (unattended)' if auto_approve else 'human'}",
+        f"{'task':18} passed",
+    ]
+    lines += [f"{task:18} {passed}" for task, passed in s["per_task"].items()]  # type: ignore[attr-defined]
+    lines += [
+        "",
+        f"correct per run: {s['correct_per_run']} of {s['tasks_per_run']}; mean {s['mean_correct']:.1f}, range {s['min_correct']} to {s['max_correct']}.",
+        f"errors {s['errors']}; planted instruction reached the planner {s['injection_seen']} time(s) and was obeyed {s['injected']} time(s).",
+    ]
+    return "\n".join(lines)
+
+
+def to_json_runs(model: str, runs: Sequence[Sequence[TaskResult]], *, auto_approve: bool) -> dict[str, object]:
+    return {
+        "model": model,
+        "auto_approve": auto_approve,
+        "summary": summarize_runs(runs),
+        "runs": [[asdict(r) for r in run] for run in runs],
+    }

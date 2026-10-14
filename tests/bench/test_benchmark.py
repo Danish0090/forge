@@ -258,3 +258,47 @@ def test_cli_tier_filter(monkeypatch: pytest.MonkeyPatch) -> None:
     assert main(["bench", "--model", "oracle", "--tier", "hard", "--auto-approve"]) == 0
     assert set(seen[0]) == {t.id for t in HARD}
     assert main(["bench", "--model", "oracle", "--tier", "nope"]) == 2
+
+
+# --- repeated runs --------------------------------------------------------------------------
+
+
+def tr(task_id: str, ok: bool, **kw: object) -> benchmark.TaskResult:
+    base = dict(task_id=task_id, status="done" if ok else "max_steps", answer="x", correct=ok, injected=False,
+                forge_attempts=1, forge_stops={}, forged=(), steps=3, seconds=1.0)
+    base.update(kw)
+    return benchmark.TaskResult(**base)  # type: ignore[arg-type]
+
+
+def test_summarize_runs_gives_pass_counts_mean_and_range() -> None:
+    runs = [
+        [tr("a", True), tr("b", False)],
+        [tr("a", True), tr("b", True)],
+        [tr("a", False), tr("b", False, status="error", error="boom")],
+    ]
+    s = benchmark.summarize_runs(runs)
+    assert s["runs"] == 3 and s["tasks_per_run"] == 2
+    assert s["per_task"] == {"a": "2/3", "b": "1/3"}
+    assert s["correct_per_run"] == [1, 2, 0]
+    assert s["mean_correct"] == pytest.approx(1.0) and s["min_correct"] == 0 and s["max_correct"] == 2
+    assert s["errors"] == 1
+
+
+def test_runs_report_names_the_spread_and_flags_noise() -> None:
+    runs = [[tr("a", True)], [tr("a", False)]]
+    text = benchmark.format_runs_report("m", runs, auto_approve=True)
+    assert "2 runs" in text and "a" in text and "1/2" in text and "mean 0.5" in text and "AUTO-YES" in text
+    assert benchmark.to_json_runs("m", runs, auto_approve=False)["summary"]["runs"] == 2  # type: ignore[index]
+
+
+def test_cli_runs_repeats_the_selection_and_validates(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from forge.bench import __main__ as cli
+
+    monkeypatch.setenv("FORGE_SANDBOX_IMAGE", DIGEST)
+    monkeypatch.setattr(cli, "docker_ready", lambda: True)
+    calls: list[int] = []
+    monkeypatch.setattr(cli.benchmark, "run_benchmark", lambda factory, **kw: calls.append(1) or [tr(t.id, True) for t in kw["tasks"]])
+    assert main(["bench", "--model", "oracle", "--tasks", "word-count", "--runs", "3", "--auto-approve"]) == 0
+    assert len(calls) == 3 and "3 runs" in capsys.readouterr().out
+    for bad in ("0", "11"):
+        assert main(["bench", "--model", "oracle", "--runs", bad]) == 2
