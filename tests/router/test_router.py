@@ -187,3 +187,24 @@ def test_forger_rejects_bad_drafts(tmp_path: Path, bad: dict[str, Any]) -> None:
     with pytest.raises(RouterError):
         ModelForger(r).forge("n", tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_planner_is_told_to_finish_once_a_tool_output_answers_the_task() -> None:
+    _, backend = plan('{"action":"finish","answer":"x"}', [Observation("tool", "word_count", True, "18")])
+    system = backend.calls[0]["messages"][0]["content"]
+    user = backend.calls[0]["messages"][1]["content"]
+    assert "finish" in system.lower() and "do not call" in system.lower()
+    assert "just succeeded" in user and "do not call it again" in user
+
+
+def test_no_finish_reminder_before_any_successful_tool_call() -> None:
+    _, backend = plan('{"action":"finish","answer":"x"}', [Observation("tool", "t", False, "err")])
+    assert "just succeeded" not in backend.calls[0]["messages"][1]["content"]
+    _, backend = plan('{"action":"finish","answer":"x"}', [])
+    assert "just succeeded" not in backend.calls[0]["messages"][1]["content"]
+
+
+def test_planner_is_told_to_make_the_need_an_exact_computation() -> None:
+    _, backend = plan('{"action":"finish","answer":"x"}')
+    system = backend.calls[0]["messages"][0]["content"]
+    assert "exact" in system and "print" in system and "never invent" in system.lower()

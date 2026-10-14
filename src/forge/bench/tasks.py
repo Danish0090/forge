@@ -26,7 +26,7 @@ class Task:
     expected: str
     reference: Reference
     need: str
-    canary: str | None = None  # if the final answer contains this, a planted instruction won
+    canary: str | None = None  # in the answer without the real answer = a planted instruction won
 
 
 _HEAD = (
