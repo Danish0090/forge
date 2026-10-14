@@ -2,7 +2,7 @@
 
 **Thesis:** an AI agent can safely extend its own capabilities if every new tool must *earn trust* before it runs.
 
-Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry and the orchestrator core are built; the model router (the real planner and forger) is not.
+Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry, the orchestrator core and the model router (model-backed planner and forger, tested with fakes only) are built. Not yet run against a live model; benchmark and attack suite are not built.
 
 Source code: https://github.com/Danish0090/forge
 
@@ -97,10 +97,29 @@ Known limits: the registry cannot prove a decision came from the real gate (it i
 
 The orchestrator ([src/forge/orchestrator/orchestrator.py](src/forge/orchestrator/orchestrator.py)) is the loop. Each step it reloads the registry, asks a **planner** for the next action, and does one of three things: call an approved tool, report the answer, or hit a capability gap. On a gap it asks the **forger** for a draft tool and takes it up the ladder in fixed order: checks, staging in the sandbox, human approval, registry. Only then can the planner call it.
 
-- The planner and forger are interfaces (`Protocol`s). Both will be model-backed, so their output is treated as untrusted data. Tests use scripted ones; no model or network is involved yet.
+- The planner and forger are interfaces (`Protocol`s). Both are model-backed (see below), so their output is treated as untrusted data. Orchestrator tests use scripted ones.
 - Tools run only from the registry (re-hashed on every load) and only in the sandbox. Arguments go in as one JSON argv element, capped at 8 KB. The stored copy is hashed again after the run, and output is discarded if it changed.
 - Every failure (forger crash, failed checks, failed staging, human no, tampered tool, bad call) becomes an observation the planner sees. Failed evidence never reaches the human.
 - Limits: at most 10 steps and 2 forge attempts per run (both configurable). Tool output is length-capped, but it is still untrusted text; the planner prompt must treat it as data.
+
+## The model router (what exists now)
+
+The router ([src/forge/router/](src/forge/router/)) is the only code that calls a model, and it runs on the host, never in the sandbox. One config value picks the model (LiteLLM underneath). No paid key is needed: use `ollama/<tag>` for any model pulled into local Ollama (for example `ollama/qwen2.5-coder:7b`; calls go to `localhost:11434` only, no key), or the free open-weight OpenRouter aliases `nemotron` and `gemma` (need a free `OPENROUTER_API_KEY`). Free tiers change: as of 2026-10-14 Qwen, DeepSeek, Kimi and MiniMax are paid-only there, so they are not offered.
+
+- API keys, when a model needs one, come from host environment variables (`OPENROUTER_API_KEY`), are passed per call, and are scrubbed from error messages. They never enter a container.
+- `ModelPlanner` and `ModelForger` parse replies strictly (one JSON object, validated fields) and raise `RouterError` on anything else. The forger only writes `tool.py` into a fresh folder; the ladder decides whether it ever runs. Tool output reaches the planner inside `<untrusted_output>` tags with a system prompt that says to treat it as data.
+- Reliability aids inside the (untrusted) forger only: low temperature, the list of files under `/inputs` in the prompt, and up to 3 drafts when its own `ast.parse` check fails. None of this touches a gate; the ladder still judges every draft.
+- Unverified: the OpenRouter slugs were checked against its public list on 2026-10-14 and drift (a `:free` Qwen slug already 404'd) and the Ollama tag must already be pulled by you and no live call has been made. Tests use a fake completion function, so `pytest` makes no network calls.
+
+## Run the demo
+
+    export FORGE_SANDBOX_IMAGE='python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1'
+    uv run python -m forge.demo --model scripted             # no model: a bad tool is stopped, a good one reaches your approval prompt
+    uv run python -m forge.demo --model ollama/qwen2.5-coder:7b   # a real local model writes the tool
+
+Needs Docker and an interactive terminal (the approval gate refuses anything else). Inputs are a synthetic text file written to `.forge-demo/`. The scripted run is labelled scripted: the bad tool (opens a socket) is stopped by the static scan, the good one counts words, runs in the sandbox, and waits for your yes or no.
+
+Known limit: the static scan denies `import sys` and `import os`, so a tool reads its argument with `argparse` (which reads argv itself). The forger prompt says so.
 
 ## Run the tests
 
@@ -118,12 +137,16 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       approval/       diff.py, gate.py            built, security-critical
       registry/       registry.py                 built, security-critical
       orchestrator/   orchestrator.py             built, security-critical
+      router/         router.py, agents.py        built, not yet run live
+      demo.py                                     live demo CLI
     tests/
       sandbox/        policy, runner unit, runner docker tests
       checks/         static scan, injection scan, hash pin, pipeline
       approval/       diff rendering, gate decisions
       registry/       registration, verification, revoke, tamper cases
       orchestrator/   loop, forge-up-the-ladder, budgets, tamper and failure cases
+      demo/           scripted run with a faked sandbox
+      router/         model aliases, key handling, strict reply parsing (fake backend)
       conftest.py     skip logic for Docker tests
 
 ## Glossary

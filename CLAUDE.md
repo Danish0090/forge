@@ -42,7 +42,7 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 
 - Python 3.12, managed with uv. Type hints everywhere.
 - FastMCP, LiteLLM (or OpenRouter, OpenAI-compatible), Docker, OpenTelemetry, SQLite, pytest.
-- Models: Kimi K2, MiniMax M2, Claude. Switched by one config line. Model API calls happen OUTSIDE the sandbox.
+- Models (free only for now): local Ollama models and free OpenRouter open-weight models (Nemotron, Gemma). Kimi, MiniMax, DeepSeek, Qwen and Claude are paid-only for this owner. Switched by one config line. Model API calls happen OUTSIDE the sandbox.
 - Security-critical modules start with a `SECURITY-CRITICAL` note in their docstring. Hardening flags are fixed in code, not configurable. Only resource limits are tunable, and they are validated.
 - Sandbox runs call the `docker` CLI through `subprocess`. No Docker SDK.
 
@@ -55,12 +55,16 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
     src/forge/approval/  diff.py (safe diff render), gate.py (yes/no decision)
     src/forge/registry/  registry.py (SQLite index + verified copies of approved tools)
     src/forge/orchestrator/  orchestrator.py (loop: plan -> call tool or forge one up the ladder)
+    src/forge/demo.py    live demo CLI: scripted forger or a router model (`python -m forge.demo --model ...`)
+    src/forge/router/    router.py (LiteLLM wrapper, host-side keys), agents.py (ModelPlanner, ModelForger)
     tests/sandbox/       test_policy.py (no Docker), test_runner_unit.py (no Docker),
                          test_runner.py (real containers, marked `docker`)
     tests/checks/        test_static_scan.py, test_injection_scan.py,
                          test_hash_pin.py, test_pipeline.py (no Docker)
     tests/registry/      test_registry.py (no Docker)
     tests/orchestrator/  test_orchestrator.py (no Docker, sandbox faked)
+    tests/router/        test_router.py (no network, completion faked)
+    tests/demo/          test_demo.py (no Docker, no network)
     tests/conftest.py    skips Docker tests unless the daemon and image are present
 
 ## Status
@@ -71,8 +75,12 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 - Approval stage: implemented, tested, committed (`src/forge/approval/`, `tests/approval/`).
 - Static scan host-safety hardening (size cap, symlink flag, parser-crash findings): implemented, tested, committed.
 - Registry: implemented, tested, committed (`src/forge/registry/`, `tests/registry/`).
-- Orchestrator: implemented, tested, committed (`src/forge/orchestrator/`, `tests/orchestrator/`). Planner and Forger are Protocols; no model-backed versions yet.
-- Not built: model router (planner/forger implementations), benchmark, attack suite.
+- Orchestrator: implemented, tested, committed (`src/forge/orchestrator/`, `tests/orchestrator/`). Planner and Forger are Protocols.
+- Model router: implemented, tested with a fake backend, uncommitted (`src/forge/router/`, `tests/router/`). LiteLLM added with owner approval; host network calls to model APIs approved. Open models supported: Ollama (`ollama/<tag>`, localhost, no key) and OpenRouter free aliases only (nemotron, gemma; slugs checked 2026-10-14, they drift). Live runs so far: qwen2.5-coder:7b via Ollama forged 0 of 2 tool attempts (ladder blocked both); the free OpenRouter Qwen slug 404'd.
+- Demo CLI: implemented, tested with fakes; good scripted tool verified in a real container (staging only; the human approval prompt needs a real terminal and has not been exercised end to end).
+- Known limit: the static scan denies `sys` and `os`, so tools must read args via `argparse` (the forger prompt says so).
+- Live results so far: qwen2.5-coder:7b (Ollama) 0 of 2 forges; nemotron (OpenRouter free) 0 of 2 (syntax errors, and staging_args that did not match the tool). Forger now self-checks syntax, retries, and is told the input file names.
+- Not built: benchmark, attack suite.
 
 ## Git
 
