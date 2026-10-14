@@ -2,7 +2,7 @@
 
 **Thesis:** an AI agent can safely extend its own capabilities if every new tool must *earn trust* before it runs.
 
-Status: **Stages 1 to 3 (sandbox, checks, staging) done.** Approval, the registry, and the orchestrator are not built yet.
+Status: **All four ladder stages (sandbox, checks, staging, approval) done.** The registry and the orchestrator are not built yet.
 
 Source code: https://github.com/Danish0090/forge
 
@@ -19,7 +19,7 @@ Imagine an AI assistant that notices it's missing a tool, say a log parser. Inst
 | 1. Sandbox | Can the tool hurt the machine when it runs? | **Done** |
 | 2. Checks | Does the code or its description look malicious or changed? | **Done** (heuristic, see below) |
 | 3. Staging | Does it behave on real but read-only inputs? | **Done** |
-| 4. Approval | Does a human, reading a diff, say yes? | Not built |
+| 4. Approval | Does a human, reading a diff, say yes? | **Done** |
 
 Only a tool that clears all four enters the registry, and only then does the orchestrator load it.
 
@@ -67,6 +67,18 @@ Honest limits: a static scan can be dodged by a determined author (string tricks
 
 Staging runs the tool once in the same sandbox, with a folder of real inputs mounted read-only at `/inputs` ([src/forge/staging/stager.py](src/forge/staging/stager.py)). The report fails on a non-zero exit, a timeout, truncated output, or any change to the input or tool files (hashed before and after). The mount is read-only, so a hash change would mean the boundary failed. Staging only proves the tool behaves on those inputs; it is not proof of general correctness.
 
+## Stage 4: approval (what exists now)
+
+The gate ([src/forge/approval/gate.py](src/forge/approval/gate.py)) shows a human the tool's hash, its description, and a unified diff ([diff.py](src/forge/approval/diff.py)) against the previous version (or all-added for a new tool). Rules:
+
+- The human is only asked when the evidence is clean. The gate re-runs the checks itself and needs a passing staging report. Failed evidence cannot be overridden by a yes.
+- Only an explicit `yes` approves. Empty input, `y`, EOF, Ctrl-C, or no terminal (pipe, cron, an agent) all reject.
+- Terminal escapes, carriage returns, bidi overrides and zero-width characters are escaped in the diff and description, so nothing can hide from the reviewer. The diff covers exactly the files the hash pin covers.
+- A diff over 2000 lines is rejected rather than truncated.
+- The tool folder is hashed again after the answer; a change while the human was reading rejects.
+
+Known limit: the staging report is not cryptographically bound to the tool it ran on, so the caller must pass the report from the run it just did. The registry stage should store the approved hash and re-verify it on load.
+
 ## Run the tests
 
     uv run pytest                                                # unit tests, no Docker needed
@@ -80,10 +92,11 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       sandbox/        policy.py, runner.py          built, security-critical
       checks/         static_scan, injection_scan, hash_pin, pipeline   built, security-critical
       staging/        stager.py                   built
-      approval/       (planned) CLI diff and yes/no, security-critical
+      approval/       diff.py, gate.py            built, security-critical
     tests/
       sandbox/        policy, runner unit, runner docker tests
       checks/         static scan, injection scan, hash pin, pipeline
+      approval/       diff rendering, gate decisions
       conftest.py     skip logic for Docker tests
 
 ## Glossary

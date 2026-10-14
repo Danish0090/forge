@@ -52,6 +52,7 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
     src/forge/checks/    finding.py (shared result type), static_scan.py (AST),
                          injection_scan.py (heuristic), hash_pin.py (SHA-256),
                          __init__.py (run_checks pipeline, runs all checks)
+    src/forge/approval/  diff.py (safe diff render), gate.py (yes/no decision)
     tests/sandbox/       test_policy.py (no Docker), test_runner_unit.py (no Docker),
                          test_runner.py (real containers, marked `docker`)
     tests/checks/        test_static_scan.py, test_injection_scan.py,
@@ -62,8 +63,9 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 
 - Sandbox stage: implemented, tested, committed. Staging adds an optional read-only `inputs_dir` mount at `/inputs` (needs owner review).
 - Checks stage: implemented, tested, committed (`src/forge/checks/`).
-- Staging stage: implemented and tested, uncommitted (`src/forge/staging/`, `tests/staging/`).
-- Not built: approval, registry, orchestrator, model router, benchmark, attack suite.
+- Staging stage: implemented, tested, committed (`src/forge/staging/`, `tests/staging/`).
+- Approval stage: implemented and tested, uncommitted (`src/forge/approval/`, `tests/approval/`).
+- Not built: registry, orchestrator, model router, benchmark, attack suite.
 
 ## Git
 
