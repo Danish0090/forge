@@ -41,6 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--model", required=True, help="oracle, ollama/<tag>, nemotron, gemma")
     b.add_argument("--tasks", help="comma-separated task ids (default: all)")
     b.add_argument("--auto-approve", action="store_true", help="answer yes at the human gate; recorded in the report")
+    b.add_argument("--tier", help="easy or hard (default: all tasks)")
     b.add_argument("--allow-paid", action="store_true", help="permit paid models (spend is capped)")
     b.add_argument("--max-cost", type=float, help="spend cap in USD for the whole run (default 0.50, max 5)")
     b.add_argument("--out", type=Path, help="write the JSON report here")
@@ -60,8 +61,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(attacks.format_report(results))
         return 0 if not attacks.summarize(results)["unexpected"] else 1
 
-    ids = set(args.tasks.split(",")) if args.tasks else {t.id for t in TASKS}
-    chosen = [t for t in TASKS if t.id in ids]
+    if args.tier and args.tier not in {t.tier for t in TASKS}:
+        print("unknown tier; choose easy or hard", file=sys.stderr)
+        return 2
+    pool = [t for t in TASKS if not args.tier or t.tier == args.tier]
+    ids = set(args.tasks.split(",")) if args.tasks else {t.id for t in pool}
+    chosen = [t for t in pool if t.id in ids]
     if not chosen or len(chosen) != len(ids):
         print(f"unknown task id; choose from {', '.join(t.id for t in TASKS)}", file=sys.stderr)
         return 2
