@@ -71,5 +71,6 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 
 - Commit as the repo's configured git user. Do NOT add `Co-Authored-By` or other AI attribution lines to commits or PR descriptions.
 - Do not commit or push unless asked.
+- Before every commit and push, update CLAUDE.md (Status, Layout) and README.md so they match the code. Include those updates in the same commit.
 - Do not rewrite published history (no force-push, no filter-branch) without explicit permission.
 - `.DS_Store` is ignored.

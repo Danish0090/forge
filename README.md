@@ -109,4 +109,4 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
 
 ## Ground rules
 
-Project rules for contributors and for the AI agent working in this repo are in [CLAUDE.md](CLAUDE.md). The short version: generated tools run only in the sandbox, no credentials go inside it, security-critical code gets human review, and no network calls from the host without asking first.
+Project rules for contributors and for the AI agent working in this repo are in [CLAUDE.md](CLAUDE.md). The short version: generated tools run only in the sandbox, no credentials go inside it, security-critical code gets human review, and no network calls from the host without asking first. CLAUDE.md and this README are updated with every commit so they match the code.
