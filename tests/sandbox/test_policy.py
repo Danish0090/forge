@@ -154,3 +154,46 @@ def test_tool_dir_with_comma_rejected(tmp_path: Path) -> None:
     tricky.mkdir()
     with pytest.raises(PolicyError):
         SandboxPolicy(image=DIGEST, tool_dir=tricky)
+
+
+# --- inputs_dir: the read-only mount used by the staging stage -------------------------------
+
+
+@pytest.fixture
+def inputs_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "inputs"
+    d.mkdir()
+    return d
+
+
+def test_no_inputs_mount_by_default(policy: SandboxPolicy) -> None:
+    assert not any("/inputs" in a for a in args_for(policy))
+
+
+def test_inputs_dir_is_mounted_read_only(tool_dir: Path, inputs_dir: Path) -> None:
+    policy = SandboxPolicy(image=DIGEST, tool_dir=tool_dir, inputs_dir=inputs_dir)
+    mounts = [a for a in args_for(policy) if a.startswith("type=bind")]
+    assert f"type=bind,source={inputs_dir},target=/inputs,readonly" in mounts
+    assert all(m.endswith(",readonly") for m in mounts)
+
+
+def test_inputs_dir_must_be_absolute(tool_dir: Path) -> None:
+    with pytest.raises(PolicyError):
+        SandboxPolicy(image=DIGEST, tool_dir=tool_dir, inputs_dir=Path("relative"))
+
+
+def test_inputs_dir_must_exist(tool_dir: Path, tmp_path: Path) -> None:
+    with pytest.raises(PolicyError):
+        SandboxPolicy(image=DIGEST, tool_dir=tool_dir, inputs_dir=tmp_path / "missing")
+
+
+def test_inputs_dir_rejects_comma(tool_dir: Path, tmp_path: Path) -> None:
+    bad = tmp_path / "a,b"
+    bad.mkdir()
+    with pytest.raises(PolicyError):
+        SandboxPolicy(image=DIGEST, tool_dir=tool_dir, inputs_dir=bad)
+
+
+def test_inputs_dir_cannot_be_the_tool_dir(tool_dir: Path) -> None:
+    with pytest.raises(PolicyError):
+        SandboxPolicy(image=DIGEST, tool_dir=tool_dir, inputs_dir=tool_dir)

@@ -2,7 +2,7 @@
 
 **Thesis:** an AI agent can safely extend its own capabilities if every new tool must *earn trust* before it runs.
 
-Status: **Stages 1 and 2 (sandbox, checks) done.** Staging, approval, the registry, and the orchestrator are not built yet.
+Status: **Stages 1 to 3 (sandbox, checks, staging) done.** Approval, the registry, and the orchestrator are not built yet.
 
 Source code: https://github.com/Danish0090/forge
 
@@ -18,7 +18,7 @@ Imagine an AI assistant that notices it's missing a tool, say a log parser. Inst
 |---|---|---|
 | 1. Sandbox | Can the tool hurt the machine when it runs? | **Done** |
 | 2. Checks | Does the code or its description look malicious or changed? | **Done** (heuristic, see below) |
-| 3. Staging | Does it behave on real but read-only inputs? | Not built |
+| 3. Staging | Does it behave on real but read-only inputs? | **Done** |
 | 4. Approval | Does a human, reading a diff, say yes? | Not built |
 
 Only a tool that clears all four enters the registry, and only then does the orchestrator load it.
@@ -63,6 +63,10 @@ Checks run before a tool is allowed anywhere near staging. They read the tool; t
 
 Honest limits: a static scan can be dodged by a determined author (string tricks, indirect imports), and the injection scan only knows phrasings it was written for. These checks catch cheap, common cases early. The sandbox is still the real boundary.
 
+## Stage 3: staging (what exists now)
+
+Staging runs the tool once in the same sandbox, with a folder of real inputs mounted read-only at `/inputs` ([src/forge/staging/stager.py](src/forge/staging/stager.py)). The report fails on a non-zero exit, a timeout, truncated output, or any change to the input or tool files (hashed before and after). The mount is read-only, so a hash change would mean the boundary failed. Staging only proves the tool behaves on those inputs; it is not proof of general correctness.
+
 ## Run the tests
 
     uv run pytest                                                # unit tests, no Docker needed
@@ -75,6 +79,7 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
     src/forge/
       sandbox/        policy.py, runner.py          built, security-critical
       checks/         static_scan, injection_scan, hash_pin, pipeline   built, security-critical
+      staging/        stager.py                   built
       approval/       (planned) CLI diff and yes/no, security-critical
     tests/
       sandbox/        policy, runner unit, runner docker tests

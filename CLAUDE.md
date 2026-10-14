@@ -60,10 +60,10 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
 
 ## Status
 
-- Sandbox stage: done. Hardening (`--pull never`, nofile ulimit, comma guard in `tool_dir`) is committed.
-- Checks stage: done. Static scan (AST), injection scan (heuristic), hash pin (SHA-256 of the tool folder), and a pipeline that reports all findings.
-- Not built: staging, approval, registry, orchestrator, model router, benchmark, attack suite.
-- Remote: https://github.com/Danish0090/forge (public), branch `main`.
+- Sandbox stage: implemented, tested, committed. Staging adds an optional read-only `inputs_dir` mount at `/inputs` (needs owner review).
+- Checks stage: implemented, tested, committed (`src/forge/checks/`).
+- Staging stage: implemented and tested, uncommitted (`src/forge/staging/`, `tests/staging/`).
+- Not built: approval, registry, orchestrator, model router, benchmark, attack suite.
 
 ## Git
 

@@ -14,6 +14,7 @@ from pathlib import Path
 SANDBOX_USER = "65534:65534"  # nobody:nogroup
 SCRATCH_DIR = "/scratch"
 CODE_DIR = "/app"
+INPUTS_DIR = "/inputs"  # optional read-only mount, used by the staging stage
 NOFILE_LIMIT = 256  # open file descriptors per run
 
 _DIGEST_REF = re.compile(r"^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$")
@@ -34,6 +35,7 @@ class SandboxPolicy:
     timeout_s: float = 10.0
     scratch_size: str = "64m"
     max_output_bytes: int = 65_536
+    inputs_dir: Path | None = None
 
     def __post_init__(self) -> None:
         if not _DIGEST_REF.match(self.image):
@@ -45,6 +47,15 @@ class SandboxPolicy:
             raise PolicyError(f"tool_dir must be absolute: {self.tool_dir}")
         if not self.tool_dir.is_dir():
             raise PolicyError(f"tool_dir does not exist: {self.tool_dir}")
+        if self.inputs_dir is not None:
+            if "," in str(self.inputs_dir):
+                raise PolicyError(f"inputs_dir must not contain a comma: {self.inputs_dir}")
+            if not self.inputs_dir.is_absolute():
+                raise PolicyError(f"inputs_dir must be absolute: {self.inputs_dir}")
+            if not self.inputs_dir.is_dir():
+                raise PolicyError(f"inputs_dir does not exist: {self.inputs_dir}")
+            if self.inputs_dir.resolve() == self.tool_dir.resolve():
+                raise PolicyError("inputs_dir must not be the tool_dir")
         if not _MEMORY.match(self.memory):
             raise PolicyError(f"memory must look like 256m or 1g, got {self.memory!r}")
         if not _MEMORY.match(self.scratch_size):
@@ -66,6 +77,14 @@ def build_docker_args(
     command: list[str],
 ) -> list[str]:
     """Return the full `docker run` argv for one throwaway sandbox run."""
+    inputs_mount = (
+        [
+            "--mount",
+            f"type=bind,source={policy.inputs_dir},target={INPUTS_DIR},readonly",
+        ]
+        if policy.inputs_dir is not None
+        else []
+    )
     return [
         "docker",
         "run",
@@ -99,6 +118,7 @@ def build_docker_args(
         SCRATCH_DIR,
         "--mount",
         f"type=bind,source={policy.tool_dir},target={CODE_DIR},readonly",
+        *inputs_mount,
         policy.image,
         *command,
     ]
