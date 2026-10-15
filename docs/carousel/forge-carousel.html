@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>forge: carousel</title>
+<style>
+  /* One slide = one idea. 1080 x 1350 (4:5 portrait) reads best on a phone. System fonts only, so the PDF builds offline. */
+  @page { size: 1080px 1350px; margin: 0; }
+  :root {
+    --bg: #0e1216; --surface: #161c22; --band: #1a222a; --ink: #e8edf2; --ink2: #9aa7b4; --line: #2a333c;
+    --accent: #7aa2ff; --pass: #4cc38a; --fail: #ff7b6b;
+    --closed: #3987e5; --open: #d95926; --muted: #3a4652;
+    --display: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--display); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .slide { width: 1080px; height: 1350px; padding: 84px 88px 96px; position: relative; overflow: hidden; page-break-after: always; break-after: page; display: flex; flex-direction: column; background: var(--bg); }
+  .slide:last-child { page-break-after: auto; break-after: auto; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; font: 500 24px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+  .bottom { position: absolute; left: 88px; right: 88px; bottom: 48px; display: flex; justify-content: space-between; font: 400 22px var(--mono); color: var(--ink2); }
+  h1 { font-size: 112px; line-height: 1.02; font-weight: 700; letter-spacing: -.03em; margin: 0; }
+  h2 { font-size: 70px; line-height: 1.06; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+  .body { margin-top: 52px; flex: 1; display: flex; flex-direction: column; gap: 28px; }
+  p { margin: 0; font-size: 36px; line-height: 1.36; color: var(--ink); }
+  p.dim { color: var(--ink2); }
+  .mono { font-family: var(--mono); }
+  .acc { color: var(--accent); }
+  .pass { color: var(--pass); } .fail { color: var(--fail); }
+
+  /* cover */
+  .cover { justify-content: space-between; padding-bottom: 150px; }
+  .cover h1 { margin-top: 120px; }
+  .cover .sub { font-size: 40px; line-height: 1.35; color: var(--ink2); max-width: 800px; }
+  .chips { display: flex; gap: 16px; flex-wrap: wrap; }
+  .chip { font: 500 26px var(--mono); border: 2px solid var(--line); border-radius: 999px; padding: 12px 24px; color: var(--ink); }
+
+  /* ladder */
+  .gate { background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 26px 32px; display: grid; grid-template-columns: 1fr auto; gap: 6px 24px; align-items: baseline; }
+  .gate h3 { margin: 0; font-size: 44px; font-weight: 700; }
+  .gate .what { grid-column: 1; font-size: 28px; line-height: 1.35; color: var(--ink2); }
+  .gate .ev { font: 500 22px var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+  .link { align-self: center; width: 4px; height: 26px; background: var(--line); margin: -14px 0; }
+  .floor { border: 2px dashed var(--accent); border-radius: 18px; padding: 24px 32px; background: var(--band); }
+  .floor strong { font-size: 34px; }
+  .floor span { display: block; font: 400 24px var(--mono); color: var(--ink2); margin-top: 8px; }
+
+  /* evasion list */
+  .list { display: flex; flex-direction: column; gap: 14px; }
+  .item { font: 500 34px var(--mono); background: var(--surface); border: 2px solid var(--line); border-left: 8px solid var(--fail); border-radius: 12px; padding: 16px 26px; }
+  .big { font-size: 150px; font-weight: 700; letter-spacing: -.04em; line-height: 1; }
+
+  /* bars */
+  .legend { display: flex; gap: 34px; font-size: 28px; color: var(--ink2); }
+  .legend i { display: inline-block; width: 22px; height: 22px; border-radius: 5px; margin-right: 12px; vertical-align: -3px; }
+  .rows { display: grid; grid-template-columns: 330px 1fr 120px; gap: 20px 24px; align-items: center; }
+  .rows .n { font: 500 28px var(--mono); text-align: right; }
+  .track { height: 44px; position: relative; border-left: 2px solid var(--line); }
+  .bar { height: 100%; border-radius: 0 8px 8px 0; }
+  .ref { position: absolute; top: -8px; bottom: -8px; border-left: 3px dashed var(--ink2); }
+  .rows .v { font: 500 30px var(--mono); }
+  .fn { font-size: 26px; color: var(--ink2); line-height: 1.4; }
+
+  /* callout */
+  .callout { background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 34px 36px; }
+  .callout .row { display: flex; justify-content: space-between; gap: 24px; font: 400 32px var(--mono); padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .callout .row:last-child { border-bottom: 0; }
+  .callout .row b { font-weight: 500; }
+
+  /* cards */
+  .cards { display: flex; flex-direction: column; gap: 22px; }
+  .card { background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 28px 34px; }
+  .card h3 { margin: 0 0 8px; font-size: 38px; }
+  .card p { font-size: 29px; color: var(--ink2); line-height: 1.38; }
+  .card .num { font: 700 56px var(--display); color: var(--accent); margin-right: 14px; }
+
+  /* only for screenshots while checking: #N shows just slide N */
+</style>
+</head>
+<body>
+
+<!-- 1 · cover -->
+<section class="slide cover" id="s1">
+  <div class="top"><span>forge</span><span>1 / 8</span></div>
+  <div>
+    <h1>An AI agent wrote its own tool.<br><span class="acc">Should it run?</span></h1>
+  </div>
+  <div>
+    <p class="sub">What a week of building a trust ladder for agent-written code taught me, tested on seven models and 34 attacks.</p>
+    <div class="chips" style="margin-top:44px"><span class="chip">4 gates</span><span class="chip">7 models</span><span class="chip">34 attacks</span></div>
+  </div>
+  <div class="bottom"><span>github.com/Danish0090/forge</span><span>swipe →</span></div>
+</section>
+
+<!-- 2 · claim -->
+<section class="slide" id="s2">
+  <div class="top"><span>The claim</span><span>2 / 8</span></div>
+  <div class="body">
+    <h2>An agent can extend itself safely, if every new tool has to <span class="acc">earn</span> trust.</h2>
+    <p class="dim" style="margin-top:36px">Earn means evidence:</p>
+    <div class="list">
+      <div class="item" style="border-left-color: var(--pass)">passing tests</div>
+      <div class="item" style="border-left-color: var(--pass)">clean scans</div>
+      <div class="item" style="border-left-color: var(--pass)">a human's yes</div>
+    </div>
+    <p style="margin-top:30px">Never the agent saying "it is safe."</p>
+  </div>
+  <div class="bottom"><span>forge</span><span>github.com/Danish0090/forge</span></div>
+</section>
+
+<!-- 3 · ladder -->
+<section class="slide" id="s3">
+  <div class="top"><span>The ladder</span><span>3 / 8</span></div>
+  <div class="body" style="gap:0; margin-top:40px">
+    <h2 style="margin-bottom:34px">Four gates. Each asks for different evidence.</h2>
+    <div class="gate"><h3>1 · Checks</h3><span class="ev">static</span><div class="what">Reads the code without running it. Scans the description. Pins a hash.</div></div>
+    <div class="link"></div>
+    <div class="gate"><h3>2 · Staging</h3><span class="ev">behavior</span><div class="what">Runs in the sandbox. Sees only files it declared. Runs tests it wrote itself.</div></div>
+    <div class="link"></div>
+    <div class="gate"><h3>3 · Approval</h3><span class="ev">human</span><div class="what">A person reads the diff and the manifest. Only a typed yes counts.</div></div>
+    <div class="link"></div>
+    <div class="gate"><h3>4 · Registry</h3><span class="ev">integrity</span><div class="what">Keeps its own copy. Re-hashes it on every load. Served over MCP.</div></div>
+    <div class="floor" style="margin-top:30px"><strong>Docker sandbox under everything</strong><span>no network · read-only · non-root · throwaway</span></div>
+  </div>
+  <div class="bottom"><span>forge</span><span>github.com/Danish0090/forge</span></div>
+</section>
+
+<!-- 4 · static analysis -->
+<section class="slide" id="s4">
+  <div class="top"><span>Finding 1</span><span>4 / 8</span></div>
+  <div class="body">
+    <h2>Static analysis is a filter, <span class="acc">not a boundary.</span></h2>
+    <p class="dim">My own attack suite got past my code scan six times:</p>
+    <div class="list">
+      <div class="item">builtins.exec</div>
+      <div class="item">getattr(builtins, …)</div>
+      <div class="item">posix.system</div>
+      <div class="item">_socket · _posixsubprocess · _ctypes</div>
+    </div>
+    <p style="margin-top:22px">Each hole is closed. Now <b class="pass">34 attacks</b> and 2 tamper checks stop before a human sees them.</p>
+    <p class="dim">The sandbox is what makes the next miss survivable.</p>
+  </div>
+  <div class="bottom"><span>forge</span><span>github.com/Danish0090/forge</span></div>
+</section>
+
+<!-- 5 · scores -->
+<section class="slide" id="s5">
+  <div class="top"><span>Finding 2</span><span>5 / 8</span></div>
+  <div class="body" style="gap:24px">
+    <h2>Closed-weight models cleared every task. Open-weight did not.</h2>
+    <div class="legend"><span><i style="background:var(--closed)"></i>Closed-weight</span><span><i style="background:var(--open)"></i>Open-weight</span></div>
+    <div class="rows">
+      <div class="n">gemini-4-argon</div><div class="track"><div class="bar" style="width:100%;background:var(--closed)"></div><div class="ref" style="left:100%"></div></div><div class="v">6.0</div>
+      <div class="n">gpt-5.6-sol</div><div class="track"><div class="bar" style="width:100%;background:var(--closed)"></div><div class="ref" style="left:100%"></div></div><div class="v">6.0</div>
+      <div class="n">claude-opus-5</div><div class="track"><div class="bar" style="width:100%;background:var(--closed)"></div><div class="ref" style="left:100%"></div></div><div class="v">6.0</div>
+      <div class="n">kimi-k2.7-code</div><div class="track"><div class="bar" style="width:88.3%;background:var(--open)"></div><div class="ref" style="left:100%"></div></div><div class="v">5.3</div>
+      <div class="n">minimax-m3</div><div class="track"><div class="bar" style="width:83.3%;background:var(--open)"></div><div class="ref" style="left:100%"></div></div><div class="v">5.0</div>
+      <div class="n">deepseek-v4-pro</div><div class="track"><div class="bar" style="width:78.3%;background:var(--open)"></div><div class="ref" style="left:100%"></div></div><div class="v">4.7</div>
+      <div class="n">qwen3-coder</div><div class="track"><div class="bar" style="width:45%;background:var(--open)"></div><div class="ref" style="left:100%"></div></div><div class="v">2.7</div>
+    </div>
+    <p style="font-size:34px; margin-top:10px">Once a tool got registered, it almost always passed the held-out checks. <span class="acc">Most losses happen before registration.</span></p>
+    <p class="fn">Mean tasks correct out of 6, hard tier, 3 runs each. A tool counts only if it passed its own tests and the capability manifest. Dashed line = a perfect run. Small samples: a direction, not a ranking.</p>
+  </div>
+  <div class="bottom"><span>forge</span><span>results/summary.md</span></div>
+</section>
+
+<!-- 6 · self-grading -->
+<section class="slide" id="s6">
+  <div class="top"><span>Finding 3</span><span>6 / 8</span></div>
+  <div class="body" style="gap:26px">
+    <h2>The tool was right. <span class="acc">The test was wrong.</span></h2>
+    <p class="dim">Models write tests for their own tools. Self-written tests are not independent evidence.</p>
+    <div class="callout">
+      <div class="row"><b class="dim" style="color:var(--ink2)">Task</b><span>days between earliest and latest date</span></div>
+      <div class="row"><b>Tool printed</b><span class="pass">896</span></div>
+      <div class="row"><b>Model's own test expected</b><span class="fail">897</span></div>
+      <div class="row"><b>Right answer (counted by hand)</b><span class="pass">896</span></div>
+    </div>
+    <p>A correct tool was rejected by the model's own arithmetic.</p>
+    <div class="rows" style="grid-template-columns: 400px 1fr 70px; margin-top:6px">
+      <div class="n" style="font-size:25px">tool right, test wrong</div><div class="track"><div class="bar" style="width:91.7%;background:var(--closed)"></div></div><div class="v">11</div>
+      <div class="n" style="font-size:25px">tool failed on real input</div><div class="track"><div class="bar" style="width:100%;background:var(--muted)"></div></div><div class="v">12</div>
+      <div class="n" style="font-size:25px">crashed on own edge case</div><div class="track"><div class="bar" style="width:41.7%;background:var(--muted)"></div></div><div class="v">5</div>
+      <div class="n" style="font-size:25px">other</div><div class="track"><div class="bar" style="width:58.3%;background:var(--muted)"></div></div><div class="v">7</div>
+    </div>
+    <p class="fn">35 failed attempts by four open-weight models, judged by recomputing the answer for each model's own fixture.</p>
+  </div>
+  <div class="bottom"><span>forge</span><span>results/adjudicate.py</span></div>
+</section>
+
+<!-- 7 · measurement -->
+<section class="slide" id="s7">
+  <div class="top"><span>Finding 4</span><span>7 / 8</span></div>
+  <div class="body" style="gap:26px">
+    <h2>Evaluation infrastructure fails in boring ways.</h2>
+    <div class="cards">
+      <div class="card"><h3><span class="num">1</span>An unfair first run</h3><p>A bug of mine hid the model's own test files from its tool. Every test crashed. Fixed, and the first result is kept in the repo, labelled.</p></div>
+      <div class="card"><h3><span class="num">2</span>A reply cap that hid models</h3><p>Reasoning models spend the cap on hidden thinking. At 12,000 tokens, minimax went from 3.3 to 5.0 of 6, and 9 empty replies became 0.</p></div>
+      <div class="card"><h3><span class="num">3</span>A cost counter 3× too low</h3><p>I estimated about $5. The dashboard said about $15. Hidden reasoning tokens were not counted. Fixed: the router now uses the provider's own number.</p></div>
+    </div>
+  </div>
+  <div class="bottom"><span>forge</span><span>github.com/Danish0090/forge</span></div>
+</section>
+
+<!-- 8 · limits and repo -->
+<section class="slide" id="s8">
+  <div class="top"><span>Scope</span><span>8 / 8</span></div>
+  <div class="body" style="gap:22px">
+    <h2>What I am not claiming.</h2>
+    <div class="cards">
+      <div class="card"><p style="color:var(--ink)">Small samples, one task set. A direction, not a ranking.</p></div>
+      <div class="card"><p style="color:var(--ink)">The human approval gate is tested with fakes, not yet with a real reviewer.</p></div>
+      <div class="card"><p style="color:var(--ink)">The manifest limits what a tool can see, not what it does with it.</p></div>
+      <div class="card"><p style="color:var(--ink)">The scan has been beaten before. The sandbox is the boundary.</p></div>
+    </div>
+    <div style="margin-top:auto">
+      <p class="dim" style="font-size:30px">Code, attack suite, and every raw result file:</p>
+      <p class="mono acc" style="font-size:42px; margin-top:10px">github.com/Danish0090/forge</p>
+      <p class="dim" style="font-size:30px; margin-top:22px">How are you deciding which agent-written code gets to run?</p>
+    </div>
+  </div>
+  <div class="bottom"><span>forge</span><span>8 / 8</span></div>
+</section>
+
+<script>
+  // Checking aid only: open forge-carousel.html#5 to see just slide 5 (used for screenshots).
+  var m = location.hash.match(/^#(\d)$/);
+  if (m) { document.querySelectorAll(".slide").forEach(function (s, i) { if (i + 1 !== Number(m[1])) s.style.display = "none"; }); }
+</script>
+</body>
+</html>

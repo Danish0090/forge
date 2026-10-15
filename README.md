@@ -156,6 +156,15 @@ Then pass it to uv, which loads it into the host environment for that run only:
 
 forge itself does not read `.env`; it only reads `OPENROUTER_API_KEY` from the environment, so no extra dependency is needed. The key stays on the host and never enters a container.
 
+## Carousel: the short version
+
+[docs/carousel/forge-carousel.pdf](docs/carousel/forge-carousel.pdf) is an 8-page summary built for reading on a phone (and for use as a LinkedIn document post): the claim, the four gates, what my own attacks found, scores by model, why open-weight forges failed, the mistakes in my own measuring, and what I am not claiming. Every number in it comes from [results/summary.md](results/summary.md) and the notes in [CLAUDE.md](CLAUDE.md). The source is [docs/carousel/forge-carousel.html](docs/carousel/forge-carousel.html). It uses system fonts and builds offline with headless Chrome:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --no-pdf-header-footer \
+        --print-to-pdf="$PWD/docs/carousel/forge-carousel.pdf" "file://$PWD/docs/carousel/forge-carousel.html"
+
+If the numbers in `results/` change, update the HTML by hand and rebuild.
+
 ## Run the demo
 
     export FORGE_SANDBOX_IMAGE='python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1'

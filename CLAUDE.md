@@ -75,6 +75,8 @@ Docker tests skip when `FORGE_SANDBOX_IMAGE` is unset. The approved image is `py
     tests/demo/          test_demo.py (no Docker, no network)
     tests/bench/         test_attacks.py, test_redteam.py, test_benchmark.py, test_hidden.py, test_survival.py, test_manifest_bench.py (Docker tests marked `docker`; bench_helpers.py is shared)
     tests/mcpserver/     test_mcp_server.py (needs the `mcp` extra; faked sandbox, plus Docker tests for a real client over stdio)
+    docs/carousel/       forge-carousel.html (source) and forge-carousel.pdf (8-page summary, built with headless Chrome; numbers come from results/summary.md)
+    results/             saved benchmark and attack output, summary.md (built by summarize.py), adjudicate.py (judges failed self-written tests)
     tests/conftest.py    skips Docker tests unless the daemon and image are present
 
 ## Status
