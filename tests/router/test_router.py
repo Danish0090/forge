@@ -12,6 +12,7 @@ import pytest
 from forge.orchestrator.orchestrator import CallTool, Finish, NeedTool, Observation
 from forge.registry import RegisteredTool
 from forge.router import ModelForger, ModelPlanner, ModelRouter, RouterError, resolve_model
+from forge.router.router import COST_SAFETY_FACTOR
 
 
 class FakeBackend:
@@ -284,11 +285,14 @@ def test_paid_model_needs_explicit_opt_in() -> None:
         ModelRouter("qwen3-coder", env={"OPENROUTER_API_KEY": "k"})
 
 
-def test_spend_is_estimated_from_usage_and_price() -> None:
+def test_spend_without_a_provider_cost_is_estimated_with_a_safety_factor() -> None:
+    # The estimate undercounted about 3x on 2026-10-15, so it is multiplied by a safety factor.
     r, _ = paid_router("a", allow_paid=True, max_cost_usd=5.0)
     r.complete("s", "u")
     spec = resolve_model("qwen3-coder")
-    assert r.spent_usd == pytest.approx(spec.price_in + spec.price_out)  # 1M tokens each way
+    assert COST_SAFETY_FACTOR == 3.0
+    assert r.spent_usd == pytest.approx((spec.price_in + spec.price_out) * COST_SAFETY_FACTOR)  # 1M tokens each way
+    assert (r.priced_by_provider, r.estimated_calls) == (0, 1)
 
 
 def test_cap_stops_calls_before_they_are_made() -> None:
@@ -313,7 +317,11 @@ def test_free_models_never_accrue_cost() -> None:
 def test_missing_usage_is_not_a_crash() -> None:
     backend = FakeBackend("a")
     r = ModelRouter("qwen3-coder", completion=backend, env={"OPENROUTER_API_KEY": "k"}, allow_paid=True)
-    assert r.complete("s", "u") == "a" and r.spent_usd == 0
+    assert r.complete("s", "u") == "a"
+    # unknown usage is charged as the worst case (a full reply at the output price), never as free
+    spec = resolve_model("qwen3-coder")
+    assert r.spent_usd == pytest.approx(4_000 * spec.price_out / 1e6)
+    assert r.estimated_calls == 1
 
 
 @pytest.mark.parametrize("cap", [0, -1.0, 1000.0])
@@ -492,3 +500,96 @@ def test_prompt_says_fixtures_must_use_manifest_names(tmp_path: Path) -> None:
     ModelForger(r).forge("n", tmp_path)
     system = backend.calls[0]["messages"][0]["content"].lower()
     assert "fixture" in system and "same names" in system and "manifest" in system
+
+
+# --- spend: use the provider's own number when it gives one ----------------------------------------------------
+
+
+def costed_router(cost: Any, *replies: str, **kwargs: Any):  # type: ignore[no-untyped-def]
+    backend = FakeBackend(*replies)
+
+    def call(**kw: Any) -> Any:
+        resp = backend(**kw)
+        resp["usage"] = {"prompt_tokens": 1000, "completion_tokens": 1000, "cost": cost}
+        return resp
+
+    return ModelRouter("qwen3-coder", completion=call, env={"OPENROUTER_API_KEY": "k"}, allow_paid=True, **kwargs), backend
+
+
+def test_a_cost_reported_by_the_provider_is_used_as_is() -> None:
+    r, _ = costed_router(0.05, "a")
+    r.complete("s", "u")
+    assert r.spent_usd == pytest.approx(0.05)  # not tokens times price, and no safety factor
+    assert (r.priced_by_provider, r.estimated_calls) == (1, 0)
+
+
+def test_provider_costs_add_up_across_calls() -> None:
+    r, _ = costed_router(0.04, "a", "b", max_cost_usd=5.0)
+    r.complete("s", "u")
+    r.complete("s", "u")
+    assert r.spent_usd == pytest.approx(0.08) and r.priced_by_provider == 2
+
+
+@pytest.mark.parametrize("bad", [-1.0, float("nan"), float("inf"), "0.05", None, True, [0.05]])
+def test_an_unusable_provider_cost_falls_back_to_the_estimate(bad: Any) -> None:
+    r, _ = costed_router(bad, "a")
+    r.complete("s", "u")
+    spec = resolve_model("qwen3-coder")
+    assert r.spent_usd == pytest.approx((1000 * spec.price_in + 1000 * spec.price_out) / 1e6 * COST_SAFETY_FACTOR)
+    assert (r.priced_by_provider, r.estimated_calls) == (0, 1)
+
+
+def test_the_cap_follows_the_provider_cost() -> None:
+    r, backend = costed_router(0.30, "a", "b", max_cost_usd=0.5)
+    r.complete("s", "u")
+    r.complete("s", "u")  # 0.30 < 0.5, still allowed
+    with pytest.raises(RouterError, match="spend cap"):
+        r.complete("s", "u")
+    assert len(backend.calls) == 2
+
+
+def test_free_models_ignore_any_reported_cost() -> None:
+    backend = FakeBackend("a")
+
+    def call(**kw: Any) -> Any:
+        resp = backend(**kw)
+        resp["usage"] = {"prompt_tokens": 5, "completion_tokens": 5, "cost": 9.99}
+        return resp
+
+    r = ModelRouter("nemotron", completion=call, env={"OPENROUTER_API_KEY": "k"})
+    r.complete("s", "u")
+    assert r.spent_usd == 0 and r.priced_by_provider == 0
+
+
+def test_failed_calls_are_counted_because_they_may_still_be_billed() -> None:
+    def boom(**kw: Any) -> Any:
+        raise TimeoutError("took too long")
+
+    r = ModelRouter("qwen3-coder", completion=boom, env={"OPENROUTER_API_KEY": "k"}, allow_paid=True, retry_waits=())
+    with pytest.raises(RouterError):
+        r.complete("s", "u")
+    assert r.failed_calls == 1
+
+
+def test_busy_retries_are_not_counted_as_failed_calls() -> None:
+    class Busy(Exception):
+        status_code = 429
+
+    state = {"n": 0}
+    backend = FakeBackend("ok")
+
+    def flaky(**kw: Any) -> Any:
+        state["n"] += 1
+        if state["n"] == 1:
+            raise Busy("slow down")
+        return backend(**kw)
+
+    r = ModelRouter("nemotron", completion=flaky, env={"OPENROUTER_API_KEY": "k"}, retry_waits=(0.0,), sleep=lambda _s: None)
+    assert r.complete("s", "u") == "ok" and r.failed_calls == 0
+
+
+def test_a_spend_summary_says_it_is_not_the_real_bill() -> None:
+    r, _ = costed_router(0.05, "a")
+    r.complete("s", "u")
+    text = r.spend_summary()
+    assert "$0.0500" in text and "1 call(s) priced by the provider" in text and "dashboard" in text.lower()

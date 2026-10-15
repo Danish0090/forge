@@ -138,7 +138,7 @@ Code: [src/forge/bench/](src/forge/bench/). Both run the real ladder with real c
 
 ### Paid models and the spend cap
 
-`kimi-k2.7-code`, `minimax-m3`, `deepseek-v4-pro` and `qwen3-coder` cost roughly $0.30 to $0.67 per million input tokens and $0.82 to $3.35 per million output tokens (OpenRouter prices on 2026-10-15; they drift). They refuse to run unless you pass `--allow-paid`. The router adds up the token counts the API reports and stops before the next call once the estimate reaches `--max-cost` (default $0.50, hard maximum $5). The estimate is not a bill: also set a credit limit on the key in the OpenRouter dashboard.
+`kimi-k2.7-code`, `minimax-m3`, `deepseek-v4-pro` and `qwen3-coder` cost roughly $0.30 to $0.67 per million input tokens and $0.82 to $3.35 per million output tokens (OpenRouter prices on 2026-10-15; they drift). They refuse to run unless you pass `--allow-paid`. The router stops before the next call once its running spend reaches `--max-cost` (default $0.50, hard maximum $5). That number uses the provider's own reported cost when the response has one, and otherwise the token-count estimate multiplied by 3 (a call with unknown usage is charged as a full reply). It is a guard, not the bill: on 2026-10-15 the dashboard showed about 3 times the old estimate, because hidden reasoning tokens and failed-but-billed calls were not counted. Check the OpenRouter dashboard and set a credit limit on the key. Failed calls are counted but not priced.
 
     uv run --env-file .env python -m forge.bench bench --model qwen3-coder --allow-paid --max-cost 0.25 --auto-approve
 

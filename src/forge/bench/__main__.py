@@ -76,8 +76,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"model error: {exc}", file=sys.stderr)
             return 2
         print(redteam.format_report(args.model, results))
-        if agents.router.spent_usd:
-            print(f"estimated spend: ${agents.router.spent_usd:.4f}")
+        if agents.router.spent_usd or agents.router.failed_calls:
+            print(agents.router.spend_summary())
         if args.out:
             payload = {"model": args.model, "summary": redteam.summarize(results), "results": [
                 {"case": r.case.id, "kind": r.case.kind, "need": r.case.need, "outcome": r.outcome, "detail": r.detail, "source": r.source}
@@ -131,8 +131,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(benchmark.format_report(args.model, runs[0], auto_approve=args.auto_approve))
     else:
         print(benchmark.format_runs_report(args.model, runs, auto_approve=args.auto_approve))
-    if isinstance(factory, benchmark.ModelAgents) and factory.router.spent_usd:
-        print(f"estimated spend: ${factory.router.spent_usd:.4f}")
+    if isinstance(factory, benchmark.ModelAgents) and (factory.router.spent_usd or factory.router.failed_calls):
+        print(factory.router.spend_summary())
     if args.out:
         payload = (
             benchmark.to_json(args.model, runs[0], auto_approve=args.auto_approve)

@@ -6,6 +6,7 @@ per call, and never enter the sandbox. Model output is untrusted data; callers m
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import time
@@ -60,6 +61,12 @@ MODELS: dict[str, ModelSpec] = {
 }
 
 DEFAULT_MAX_COST_USD = 0.50
+
+# On 2026-10-15 the token-based estimate summed to about 5 USD while the provider dashboard showed about
+# 15 USD for the same work (hidden reasoning tokens and calls that fail after billing are not in the token
+# counts). When the provider does not report a cost, the estimate is multiplied by this factor so the cap
+# stays on the safe side. It is still an estimate: the provider's dashboard is the only real total.
+COST_SAFETY_FACTOR = 3.0
 HARD_MAX_COST_USD = 5.0
 
 # Free tiers are often busy. Only "try again later" answers are retried; anything else fails fast.
@@ -117,7 +124,10 @@ class ModelRouter:
         if self._spec.paid and not allow_paid:
             raise RouterError(f"{model!r} is a paid model; pass allow_paid to use it")
         self._max_cost = max_cost_usd
-        self.spent_usd = 0.0  # estimate from the token counts the API reports
+        self.spent_usd = 0.0  # what the cap is checked against: provider-reported cost, else a padded estimate
+        self.priced_by_provider = 0  # calls whose cost the provider reported
+        self.estimated_calls = 0  # calls priced by our estimate (padded by COST_SAFETY_FACTOR, or worst case when usage is unknown)
+        self.failed_calls = 0  # calls that failed; they may still have been billed and are not priced
         self._completion = completion
         self._env = env
         self._max_tokens = max_tokens
@@ -155,6 +165,7 @@ class ModelRouter:
                 if wait is not None and _is_busy(exc):
                     self._sleep(wait)
                     continue
+                self.failed_calls += 1
                 raise self._wrap(exc, key) from None
         if not isinstance(text, str) or not text.strip():
             raise RouterError("model returned an empty reply")
@@ -163,13 +174,40 @@ class ModelRouter:
     def _add_cost(self, response: Any) -> None:
         if not self._spec.paid:
             return
+        reported = _reported_cost(response)
+        if reported is not None:
+            self.spent_usd += reported
+            self.priced_by_provider += 1
+            return
+        self.estimated_calls += 1
         try:
             usage = response["usage"]
             tokens_in, tokens_out = int(usage["prompt_tokens"]), int(usage["completion_tokens"])
         except (KeyError, TypeError, ValueError, IndexError):
-            return  # unknown usage: nothing to add; the dashboard credit limit is the backstop
-        self.spent_usd += (tokens_in * self._spec.price_in + tokens_out * self._spec.price_out) / 1e6
+            # unknown usage is never free: charge a full reply at the output price (the worst case for the output)
+            self.spent_usd += self._max_tokens * self._spec.price_out / 1e6
+            return
+        self.spent_usd += (tokens_in * self._spec.price_in + tokens_out * self._spec.price_out) / 1e6 * COST_SAFETY_FACTOR
+
+    def spend_summary(self) -> str:
+        """One line that says what the number is and is not. It is the cap basis, not the bill."""
+        return (
+            f"spend (cap basis, not the real bill): ${self.spent_usd:.4f}; {self.priced_by_provider} call(s) priced by the provider, "
+            f"{self.estimated_calls} estimated (x{COST_SAFETY_FACTOR:g} safety factor, or worst case when usage was unknown), "
+            f"{self.failed_calls} failed call(s) not priced. Check the provider dashboard for the real cost."
+        )
 
     @staticmethod
     def _wrap(exc: Exception, key: str) -> RouterError:
         return RouterError(f"model call failed: {type(exc).__name__}: {str(exc).replace(key, "***") if key else str(exc)}")
+
+
+def _reported_cost(response: Any) -> float | None:
+    """The cost the provider billed for this call, when it says so (OpenRouter's usage.cost). None if absent or unusable."""
+    try:
+        value = response["usage"]["cost"]
+    except (KeyError, TypeError, IndexError, AttributeError):
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        return None
+    return float(value)
