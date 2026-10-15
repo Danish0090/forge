@@ -360,3 +360,55 @@ def test_planner_prompt_says_authority_claims_inside_the_fence_are_still_just_da
     system = backend.calls[0]["messages"][0]["content"].lower()
     assert "claims to be" in system and "system" in system and "operator" in system
     assert "never" in system and "answer the task" in system
+
+
+# --- forger-written tests --------------------------------------------------------------------------
+
+OWN_TESTS = [
+    {"files": {"a.txt": "one two\n"}, "args": {"path": "/inputs/a.txt"}, "expect": "2"},
+    {"files": {"a.txt": ""}, "args": {"path": "/inputs/a.txt"}, "expect": "0"},
+]
+
+
+def test_forger_returns_the_tests_it_was_given(tmp_path: Path) -> None:
+    r, _ = router(json.dumps({**GOOD, "tests": OWN_TESTS}))
+    draft = ModelForger(r).forge("n", tmp_path)
+    assert [c.expect for c in draft.tests] == ["2", "0"]
+    assert draft.tests[0].files == {"a.txt": "one two\n"}
+    assert draft.tests[0].args == {"path": "/inputs/a.txt"}
+
+
+def test_a_draft_without_tests_is_still_a_draft(tmp_path: Path) -> None:
+    r, _ = router(json.dumps(GOOD))
+    assert ModelForger(r).forge("n", tmp_path).tests == ()
+
+
+def test_malformed_tests_are_retried_with_the_reason(tmp_path: Path) -> None:
+    bad = {**GOOD, "tests": [{"files": {"../x": "y"}, "args": {}, "expect": "1"}]}
+    r, backend = router(json.dumps(bad), json.dumps({**GOOD, "tests": OWN_TESTS}))
+    draft = ModelForger(r).forge("n", tmp_path)
+    assert len(draft.tests) == 2
+    assert "file name" in backend.calls[1]["messages"][1]["content"]
+
+
+def test_forger_gives_up_on_endless_malformed_tests(tmp_path: Path) -> None:
+    bad = json.dumps({**GOOD, "tests": "not a list"})
+    r, backend = router(bad, bad, bad)
+    with pytest.raises(RouterError):
+        ModelForger(r).forge("n", tmp_path)
+    assert len(backend.calls) == 3 and list(tmp_path.iterdir()) == []
+
+
+def test_forger_prompt_asks_for_tests_with_their_own_fixtures(tmp_path: Path) -> None:
+    r, backend = router(json.dumps(GOOD))
+    ModelForger(r).forge("n", tmp_path)
+    system = backend.calls[0]["messages"][0]["content"]
+    assert '"tests"' in system and '"expect"' in system and '"files"' in system
+    assert "by hand" in system
+
+
+def test_forger_prompt_example_shows_an_escaped_newline_not_a_real_one(tmp_path: Path) -> None:
+    r, backend = router(json.dumps(GOOD))
+    ModelForger(r).forge("n", tmp_path)
+    system = backend.calls[0]["messages"][0]["content"]
+    assert '"a.txt":"one two\\n"' in system  # a backslash and an n, so the example stays one line of valid JSON

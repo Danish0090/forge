@@ -115,3 +115,64 @@ def test_all_problems_reported_together(dirs, fake_sandbox) -> None:
         "staging-output-truncated",
         "staging-inputs-modified",
     }
+
+
+# --- forger-written test cases run after a clean staging run ---------------------------------------
+
+from forge.checks.finding import Finding  # noqa: E402
+from forge.staging.cases import CaseReport, StagingCase  # noqa: E402
+
+CASE = StagingCase(args={"path": "/inputs/a.txt"}, expect="3", files={"a.txt": "a b c\n"})
+
+
+def encode(args: dict) -> list[str]:
+    return ["python", "/app/tool.py", "ENCODED"]
+
+
+def test_cases_run_after_a_clean_staging_run(dirs, fake_sandbox, monkeypatch) -> None:
+    tool, inputs = dirs
+    seen: list[tuple] = []
+
+    def fake_cases(image, tool_dir, cases, command_for, *, timeout_s):
+        seen.append((image, tool_dir, tuple(cases), command_for, timeout_s))
+        return CaseReport((), 1, 1)
+
+    monkeypatch.setattr(stager, "run_cases", fake_cases)
+    report = run_staging(DIGEST, tool, inputs, ["x"], timeout_s=7, cases=[CASE], case_command=encode)
+    assert report.passed
+    assert (report.cases_run, report.cases_passed) == (1, 1)
+    assert seen == [(DIGEST, tool, (CASE,), encode, 7)]
+
+
+def test_failing_cases_make_staging_fail(dirs, fake_sandbox, monkeypatch) -> None:
+    tool, inputs = dirs
+    finding = Finding("staging-test-failed", "case 1: expected '3', got '4'")
+    monkeypatch.setattr(stager, "run_cases", lambda *a, **k: CaseReport((finding,), 1, 0))
+    report = run_staging(DIGEST, tool, inputs, ["x"], cases=[CASE], case_command=encode)
+    assert not report.passed
+    assert report.findings == (finding,)
+    assert (report.cases_run, report.cases_passed) == (1, 0)
+
+
+def test_cases_are_skipped_when_the_main_run_already_failed(dirs, fake_sandbox, monkeypatch) -> None:
+    tool, inputs = dirs
+    _, state = fake_sandbox
+    state["result"] = ok_result(exit_code=1)
+    called: list[int] = []
+    monkeypatch.setattr(stager, "run_cases", lambda *a, **k: called.append(1) or CaseReport((), 1, 1))
+    report = run_staging(DIGEST, tool, inputs, ["x"], cases=[CASE], case_command=encode)
+    assert [f.check for f in report.findings] == ["staging-exit-code"]
+    assert called == []
+    assert (report.cases_run, report.cases_passed) == (0, 0)
+
+
+def test_no_cases_leaves_behaviour_unchanged(dirs, fake_sandbox) -> None:
+    tool, inputs = dirs
+    report = run_staging(DIGEST, tool, inputs, ["x"])
+    assert report.passed and (report.cases_run, report.cases_passed) == (0, 0)
+
+
+def test_cases_need_a_way_to_build_the_command(dirs, fake_sandbox) -> None:
+    tool, inputs = dirs
+    with pytest.raises(ValueError):
+        run_staging(DIGEST, tool, inputs, ["x"], cases=[CASE])

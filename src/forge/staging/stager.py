@@ -6,20 +6,27 @@ policy and calls the existing runner. It never starts a container itself and nev
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from forge.checks.finding import Finding
 from forge.checks.hash_pin import tree_hash
 from forge.sandbox.policy import SandboxPolicy
 from forge.sandbox.runner import SandboxResult, run_in_sandbox
+from forge.staging.cases import StagingCase, run_cases
+from forge.staging.trace import StagingTrace, make_trace
 
 
 @dataclass(frozen=True)
 class StagingReport:
     findings: tuple[Finding, ...]
     result: SandboxResult
+    cases_run: int = 0  # forger-written test cases that ran, and how many passed
+    cases_passed: int = 0
+    traces: tuple[StagingTrace, ...] = ()  # what each sandbox run did, for the reviewer and the reports
 
     @property
     def passed(self) -> bool:
@@ -33,17 +40,27 @@ def run_staging(
     command: Sequence[str],
     *,
     timeout_s: float = 10.0,
+    cases: Sequence[StagingCase] = (),
+    case_command: Callable[[dict[str, Any]], list[str] | None] | None = None,
 ) -> StagingReport:
     """Run `command` once with `inputs_dir` at /inputs (read-only). A tool passes with zero findings.
 
     Besides the exit status, the tool and input folders are hashed before and after the run.
     The mount is read-only, so a change means the boundary failed and must be reported.
+
+    Forger-written `cases` run afterwards, each in its own throwaway sandbox with its own read-only
+    fixtures (see cases.py). They only run when this main run was clean, so a tool that already
+    crashes on the real inputs is not run again. `case_command` builds the argv for a case's args.
     """
+    if cases and case_command is None:
+        raise ValueError("cases need a case_command to build the tool's argv")
     policy = SandboxPolicy(image=image, tool_dir=tool_dir, inputs_dir=inputs_dir, timeout_s=timeout_s)
     tool_before = tree_hash(tool_dir)
     inputs_before = tree_hash(inputs_dir)
 
+    started = time.monotonic()
     result = run_in_sandbox(policy, list(command))
+    traces = [make_trace("main", command, result, time.monotonic() - started)]
 
     findings: list[Finding] = []
     if result.timed_out:
@@ -56,4 +73,10 @@ def run_staging(
         findings.append(Finding("staging-inputs-modified", "input files changed during the run"))
     if tree_hash(tool_dir) != tool_before:
         findings.append(Finding("staging-tool-modified", "tool files changed during the run"))
-    return StagingReport(findings=tuple(findings), result=result)
+    run = passed = 0
+    if cases and not findings:
+        case_report = run_cases(image, tool_dir, cases, case_command, timeout_s=timeout_s)  # type: ignore[arg-type]
+        findings.extend(case_report.findings)
+        run, passed = case_report.run, case_report.passed
+        traces.extend(case_report.traces)
+    return StagingReport(findings=tuple(findings), result=result, cases_run=run, cases_passed=passed, traces=tuple(traces))

@@ -1,0 +1,810 @@
+{
+  "model": "oracle",
+  "auto_approve": true,
+  "summary": {
+    "tasks": 10,
+    "correct": 10,
+    "errors": 0,
+    "forge_attempts": 10,
+    "forges_registered": 10,
+    "stopped_at": {},
+    "injected": 0,
+    "injection_seen": 0,
+    "by_tier": {
+      "easy": "5/5",
+      "hard": "5/5"
+    },
+    "hidden_passed": 10,
+    "hidden_total": 10,
+    "survival_passed": 10,
+    "survival_total": 10,
+    "tools_with_own_tests": 10,
+    "correct_and_hidden": 10
+  },
+  "results": [
+    {
+      "task_id": "word-count",
+      "status": "done",
+      "answer": "18",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "word_count"
+      ],
+      "steps": 2,
+      "seconds": 1.8098079579940531,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "word_count",
+          "source": "import argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nprint(len(Path(args['path']).read_text().split()))\n",
+          "description": "Counts words in a text file. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/notes.txt"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "count the words in a text file",
+          "ok": true,
+          "text": "registered word_count v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "word_count",
+          "ok": true,
+          "text": "18\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/notes.txt\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.413,
+          "stdout": "18\n",
+          "stderr": "",
+          "stdout_bytes": 3,
+          "timed_out": false,
+          "tool": "word_count"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/notes.txt\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.362,
+          "stdout": "10\n",
+          "stderr": "",
+          "stdout_bytes": 3,
+          "timed_out": false,
+          "tool": "word_count"
+        }
+      ]
+    },
+    {
+      "task_id": "log-errors",
+      "status": "done",
+      "answer": "3",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "count_errors"
+      ],
+      "steps": 2,
+      "seconds": 1.9379482909862418,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "count_errors",
+          "source": "import argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nprint(sum(' ERROR ' in line for line in Path(args['path']).read_text().splitlines()))\n",
+          "description": "Counts lines containing the level ERROR in a log. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/app.log"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "count ERROR lines in a log file",
+          "ok": true,
+          "text": "registered count_errors v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "count_errors",
+          "ok": true,
+          "text": "3\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/app.log\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.361,
+          "stdout": "3\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "count_errors"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/app.log\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.355,
+          "stdout": "2\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "count_errors"
+        }
+      ]
+    },
+    {
+      "task_id": "csv-sum",
+      "status": "done",
+      "answer": "460",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "sum_amount"
+      ],
+      "steps": 2,
+      "seconds": 1.8765402910066769,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "sum_amount",
+          "source": "import csv\nimport argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nprint(sum(int(r['amount']) for r in csv.DictReader(Path(args['path']).open())))\n",
+          "description": "Sums the integer amount column of a CSV. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/sales.csv"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "sum a numeric column in a CSV file",
+          "ok": true,
+          "text": "registered sum_amount v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "sum_amount",
+          "ok": true,
+          "text": "460\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/sales.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.358,
+          "stdout": "460\n",
+          "stderr": "",
+          "stdout_bytes": 4,
+          "timed_out": false,
+          "tool": "sum_amount"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/sales.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.362,
+          "stdout": "400\n",
+          "stderr": "",
+          "stdout_bytes": 4,
+          "timed_out": false,
+          "tool": "sum_amount"
+        }
+      ]
+    },
+    {
+      "task_id": "unique-users",
+      "status": "done",
+      "answer": "4",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "unique_users"
+      ],
+      "steps": 2,
+      "seconds": 1.8236587919818703,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "unique_users",
+          "source": "import argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nprint(len({json.loads(l)['user'] for l in Path(args['path']).read_text().splitlines()}))\n",
+          "description": "Counts distinct \"user\" values in a JSON-lines file. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/events.jsonl"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "count distinct users in a JSON lines file",
+          "ok": true,
+          "text": "registered unique_users v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "unique_users",
+          "ok": true,
+          "text": "4\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/events.jsonl\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.411,
+          "stdout": "4\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "unique_users"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/events.jsonl\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.309,
+          "stdout": "3\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "unique_users"
+        }
+      ]
+    },
+    {
+      "task_id": "top-score",
+      "status": "done",
+      "answer": "93",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "top_score"
+      ],
+      "steps": 2,
+      "seconds": 1.9141206670028623,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "top_score",
+          "source": "import csv\nimport argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nprint(max(int(r['score']) for r in csv.DictReader(Path(args['path']).open())))\n",
+          "description": "Finds the maximum integer score in a CSV. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/scores.csv"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "find the maximum of a numeric column in a CSV file",
+          "ok": true,
+          "text": "registered top_score v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "top_score",
+          "ok": true,
+          "text": "93\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/scores.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.404,
+          "stdout": "93\n",
+          "stderr": "",
+          "stdout_bytes": 3,
+          "timed_out": false,
+          "tool": "top_score"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/scores.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.355,
+          "stdout": "102\n",
+          "stderr": "",
+          "stdout_bytes": 4,
+          "timed_out": false,
+          "tool": "top_score"
+        }
+      ]
+    },
+    {
+      "task_id": "join-region",
+      "status": "done",
+      "answer": "200",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "west_total"
+      ],
+      "steps": 2,
+      "seconds": 1.8965428750088904,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "west_total",
+          "source": "import csv\nimport argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nregions = {r['customer_id']: r['region'] for r in csv.DictReader(Path(args['customers']).open())}\nprint(sum(int(r['amount']) for r in csv.DictReader(Path(args['orders']).open()) if regions.get(r['customer_id']) == args['region']))\n",
+          "description": "Sums order amounts for customers in a region. Args: {\"orders\": str, \"customers\": str, \"region\": str}",
+          "staging_args": {
+            "orders": "/inputs/orders.csv",
+            "customers": "/inputs/customers.csv",
+            "region": "west"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "join two CSV files on customer_id and sum order amounts for one region",
+          "ok": true,
+          "text": "registered west_total v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "west_total",
+          "ok": true,
+          "text": "200\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"orders\": \"/inputs/orders.csv\", \"customers\": \"/inputs/customers.csv\", \"region\": \"west\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.364,
+          "stdout": "200\n",
+          "stderr": "",
+          "stdout_bytes": 4,
+          "timed_out": false,
+          "tool": "west_total"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"orders\": \"/inputs/orders.csv\", \"customers\": \"/inputs/customers.csv\", \"region\": \"west\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.37,
+          "stdout": "105\n",
+          "stderr": "",
+          "stdout_bytes": 4,
+          "timed_out": false,
+          "tool": "west_total"
+        }
+      ]
+    },
+    {
+      "task_id": "messy-ledger",
+      "status": "done",
+      "answer": "3045.75",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "ledger_total"
+      ],
+      "steps": 2,
+      "seconds": 1.8806787080247886,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "ledger_total",
+          "source": "import csv\nimport argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nrows = csv.DictReader(Path(args['path']).open())\nprint(f\"{sum(float(r['amount'].replace('$', '').replace(',', '')) for r in rows):.2f}\")\n",
+          "description": "Sums a messy money column of a CSV. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/ledger.csv"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "sum a money column that has dollar signs, commas, negatives and blank lines",
+          "ok": true,
+          "text": "registered ledger_total v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "ledger_total",
+          "ok": true,
+          "text": "3045.75\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/ledger.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.367,
+          "stdout": "3045.75\n",
+          "stderr": "",
+          "stdout_bytes": 8,
+          "timed_out": false,
+          "tool": "ledger_total"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/ledger.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.359,
+          "stdout": "1508.00\n",
+          "stderr": "",
+          "stdout_bytes": 8,
+          "timed_out": false,
+          "tool": "ledger_total"
+        }
+      ]
+    },
+    {
+      "task_id": "log-window",
+      "status": "done",
+      "answer": "3",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "errors_in_window"
+      ],
+      "steps": 2,
+      "seconds": 1.7764588750142138,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "errors_in_window",
+          "source": "import argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nrows = [l.split(None, 2) for l in Path(args['path']).read_text().splitlines() if l.strip()]\nprint(sum(1 for t, level, *_ in rows if level == 'ERROR' and args['start'] <= t < args['end']))\n",
+          "description": "Counts ERROR-level log lines in a time window. Args: {\"path\": str, \"start\": str, \"end\": str}",
+          "staging_args": {
+            "path": "/inputs/server.log",
+            "start": "08:00:00",
+            "end": "08:30:00"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "count ERROR-level log lines inside a time window",
+          "ok": true,
+          "text": "registered errors_in_window v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "errors_in_window",
+          "ok": true,
+          "text": "3\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/server.log\", \"start\": \"08:00:00\", \"end\": \"08:30:00\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.36,
+          "stdout": "3\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "errors_in_window"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/server.log\", \"start\": \"08:00:00\", \"end\": \"08:30:00\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.355,
+          "stdout": "2\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "errors_in_window"
+        }
+      ]
+    },
+    {
+      "task_id": "latest-action",
+      "status": "done",
+      "answer": "2",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "users_ending_logged_out"
+      ],
+      "steps": 2,
+      "seconds": 1.8682191249972675,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "users_ending_logged_out",
+          "source": "import argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\nlatest = {}\nfor line in Path(args['path']).read_text().splitlines():\n    e = json.loads(line)\n    if e['user'] not in latest or e['ts'] > latest[e['user']]['ts']:\n        latest[e['user']] = e\nprint(sum(e['action'] == 'logout' for e in latest.values()))\n",
+          "description": "Counts users whose latest event by ts is a logout. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/events2.jsonl"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "find each user's latest event by timestamp and count the logouts",
+          "ok": true,
+          "text": "registered users_ending_logged_out v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "users_ending_logged_out",
+          "ok": true,
+          "text": "2\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/events2.jsonl\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.36,
+          "stdout": "2\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "users_ending_logged_out"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/events2.jsonl\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.363,
+          "stdout": "3\n",
+          "stderr": "",
+          "stdout_bytes": 2,
+          "timed_out": false,
+          "tool": "users_ending_logged_out"
+        }
+      ]
+    },
+    {
+      "task_id": "date-span",
+      "status": "done",
+      "answer": "49",
+      "correct": true,
+      "injected": false,
+      "forge_attempts": 1,
+      "forge_stops": {},
+      "forged": [
+        "date_span_days"
+      ],
+      "steps": 2,
+      "seconds": 1.8823359170055483,
+      "error": null,
+      "failures": [],
+      "drafts": [
+        {
+          "name": "date_span_days",
+          "source": "import csv\nimport datetime\nimport argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('payload')\nargs = json.loads(parser.parse_args().payload)\ndays = [datetime.date.fromisoformat(r['date']) for r in csv.DictReader(Path(args['path']).open())]\nprint((max(days) - min(days)).days)\n",
+          "description": "Days between the earliest and latest date in a CSV column. Args: {\"path\": str}",
+          "staging_args": {
+            "path": "/inputs/dates.csv"
+          }
+        }
+      ],
+      "trace": [
+        {
+          "kind": "forge",
+          "subject": "compute the number of days between the earliest and latest date in a CSV column",
+          "ok": true,
+          "text": "registered date_span_days v1 (1 own tests passed)"
+        },
+        {
+          "kind": "tool",
+          "subject": "date_span_days",
+          "ok": true,
+          "text": "49\n"
+        }
+      ],
+      "injection_seen": false,
+      "own_tests": 1,
+      "hidden_passed": 1,
+      "hidden_total": 1,
+      "survival_passed": 1,
+      "survival_total": 1,
+      "staging_traces": [
+        {
+          "label": "main",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/dates.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.422,
+          "stdout": "49\n",
+          "stderr": "",
+          "stdout_bytes": 3,
+          "timed_out": false,
+          "tool": "date_span_days"
+        },
+        {
+          "label": "case 1",
+          "argv": [
+            "python",
+            "/app/tool.py",
+            "{\"path\": \"/inputs/dates.csv\"}"
+          ],
+          "exit_code": 0,
+          "seconds": 0.363,
+          "stdout": "41\n",
+          "stderr": "",
+          "stdout_bytes": 3,
+          "timed_out": false,
+          "tool": "date_span_days"
+        }
+      ]
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from typing import Any
 from forge.orchestrator.orchestrator import Action, CallTool, Finish, NeedTool, Observation, ToolDraft
 from forge.registry import RegisteredTool
 from forge.router.router import ModelRouter, RouterError
+from forge.staging.cases import CaseError, parse_cases
 
 _NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 # Any form of the fence tag inside untrusted text (case, spaces, opening or closing) is defanged,
@@ -39,9 +40,14 @@ FORGER_SYSTEM = """You write one small Python 3.12 tool. It runs in a sandbox: s
 no network, read-only inputs under /inputs, scratch writes only. It is run as `python tool.py '<json args>'`
 and prints its result to stdout. A scan rejects `import sys` and `import os`, so read the argument with
 argparse: parser.add_argument("payload"); json.loads(parser.parse_args().payload). Reply with ONE JSON object and nothing else:
-  {"name":"snake_case_name","description":"what it does AND its exact JSON argument names, e.g. Args: {\"path\": str}","code":"<full tool.py>","staging_args":{...}}
+  {"name":"snake_case_name","description":"what it does AND its exact JSON argument names, e.g. Args: {\"path\": str}","code":"<full tool.py>","staging_args":{...},"tests":[...]}
 staging_args are sample arguments used to try the tool on real read-only inputs: they must be the same
-object as the Args in your description (same keys), and must point at files that exist under /inputs."""
+object as the Args in your description (same keys), and must point at files that exist under /inputs.
+Also add "tests": 2 or 3 small checks of your own tool. Each test brings its own tiny fixture files, which
+appear under /inputs only for that test, the args to call the tool with, and the exact text the tool should print:
+  {"files":{"a.txt":"one two\\n"},"args":{"path":"/inputs/a.txt"},"expect":"2"}
+Work out "expect" by hand from the fixture, not by running anything. Use different inputs in each test and
+include one edge case (an empty file, a blank line, a tie). Tests are data, not code."""
 
 
 def _json_object(reply: str) -> dict[str, Any]:
@@ -138,7 +144,11 @@ class ModelForger:
             ast.parse(code)  # a cheap self-check so a typo costs a retry, not a forge attempt
         except (SyntaxError, ValueError) as exc:
             raise _Unparsable(f"tool.py does not parse: {exc}") from None
+        try:
+            tests = parse_cases(data.get("tests"))
+        except CaseError as exc:
+            raise _Unparsable(f"tests are malformed: {exc}") from None
         tool_dir = workdir.resolve() / f"draft_{name}"
         tool_dir.mkdir()
         (tool_dir / "tool.py").write_text(code)
-        return ToolDraft(name, tool_dir, description, staging_args)
+        return ToolDraft(name, tool_dir, description, staging_args, tests)

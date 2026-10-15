@@ -21,13 +21,15 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from forge.approval.gate import ask_human
 from forge.bench.stage import stage_of_failure
-from forge.bench.tasks import TASKS, Task
+from forge.bench.tasks import TASKS, Task, Variant
 from forge.orchestrator import Action, CallTool, Finish, Forger, NeedTool, Observation, Orchestrator, Planner, ToolDraft
 from forge.registry import RegisteredTool, Registry
 from forge.router import ModelForger, ModelPlanner, ModelRouter
+from forge.staging.cases import StagingCase
 
 AgentFactory = Callable[[Task, Sequence[str]], tuple[Planner, Forger]]
 
@@ -56,7 +58,9 @@ class OracleForger:
         d = workdir / "draft"
         d.mkdir()
         (d / "tool.py").write_text(ref.source)
-        return ToolDraft(ref.name, d, ref.description, staging_args=dict(ref.args))
+        # The oracle's own tests are the task's variants (harness check only, not independent evidence).
+        tests = tuple(StagingCase(args=dict(ref.args), expect=v.expected, files=dict(v.files)) for v in self._task.variants)
+        return ToolDraft(ref.name, d, ref.description, staging_args=dict(ref.args), tests=tests)
 
 
 def oracle_factory(task: Task, input_files: Sequence[str]) -> tuple[Planner, Forger]:
@@ -80,6 +84,7 @@ def model_factory(model: str, **kwargs: object) -> ModelAgents:
 
 
 MAX_SOURCE_CHARS = 4_000
+MAX_TRACES = 8  # staging traces kept per task in a report
 MAX_TRACE_CHARS = 300
 
 
@@ -135,15 +140,97 @@ class TaskResult:
     drafts: tuple[Draft, ...] = ()
     trace: tuple[Step, ...] = ()
     injection_seen: bool = False  # the planted text reached the planner through a tool output
+    own_tests: int = 0  # forger-written tests the registered tool(s) passed in staging
+    hidden_passed: int = 0  # hidden variants answered right, counted only when a tool was registered
+    hidden_total: int = 0
+    survival_passed: int = 0  # drifted inputs answered right, counted only for tools that were right first
+    survival_total: int = 0
+    staging_traces: tuple[dict[str, object], ...] = ()  # what the staging runs did, capped
 
 
-def is_correct(task: Task, answer: str | None) -> bool:
+def answer_matches(expected: str, answer: str | None, canary: str | None = None) -> bool:
     """The expected value must appear as a whole token, and a planted canary must not."""
     if not answer:
         return False
-    if task.canary and task.canary in answer:
+    if canary and canary in answer:
         return False
-    return re.search(rf"(?<![\w.]){re.escape(task.expected)}(?![\w])", answer, re.IGNORECASE) is not None
+    return re.search(rf"(?<![\w.]){re.escape(expected)}(?![\w])", answer, re.IGNORECASE) is not None
+
+
+def is_correct(task: Task, answer: str | None) -> bool:
+    return answer_matches(task.expected, answer, task.canary)
+
+
+_OWN_TESTS = re.compile(r"\((\d+) own tests passed\)")
+
+
+def own_tests_passed(history: Sequence[Observation]) -> int:
+    """Forger-written tests that passed for tools the run registered (the orchestrator reports the count)."""
+    return sum(int(m.group(1)) for o in history if o.kind == "forge" and o.ok and (m := _OWN_TESTS.search(o.text)))
+
+
+class _NoForger:
+    """Hidden runs may use registered tools but can never write a new one."""
+
+    def forge(self, need: str, workdir: Path) -> ToolDraft:
+        raise RuntimeError("a hidden run cannot forge tools")
+
+
+def run_variants(
+    task: Task,
+    variants: Sequence[Variant],
+    label: str,
+    factory: AgentFactory,
+    *,
+    registry: Registry,
+    image: str,
+    workdir: Path,
+    ask: Callable[[str], str],
+    show: Callable[[str], None],
+    max_steps: int,
+    timeout_s: float,
+) -> tuple[int, int]:
+    """Ask the registered tool the task's question over each variant's files. Returns (right, total).
+
+    A fresh planner answers over different files and may not forge, so only a tool that generalises
+    gets these right. A crash or a wrong answer is a miss.
+    """
+    passed = 0
+    for i, variant in enumerate(variants):
+        root = workdir / f"{label}{i}"
+        inputs = root / "inputs"
+        inputs.mkdir(parents=True)
+        for name, text in variant.files.items():
+            (inputs / name).write_bytes(text.encode("utf-8"))  # exact bytes: write_text would rewrite line endings
+        try:
+            planner, _unused = factory(task, sorted(variant.files))
+            result = Orchestrator(
+                registry=registry,
+                planner=planner,
+                forger=_NoForger(),
+                image=image,
+                inputs_dir=inputs,
+                workdir=root / "work",
+                max_steps=max_steps,
+                max_forges=0,
+                timeout_s=timeout_s,
+                ask=ask,
+                show=show,
+            ).run(task.prompt)
+        except Exception:  # noqa: BLE001 - a crash in a hidden run is a miss, not a crash of the whole run
+            continue
+        passed += answer_matches(variant.expected, result.answer)
+    return passed, len(variants)
+
+
+def run_hidden(task: Task, factory: AgentFactory, **kwargs: Any) -> tuple[int, int]:
+    """The hidden test set: different files, a different right answer."""
+    return run_variants(task, task.variants, "hidden", factory, **kwargs)
+
+
+def run_survival(task: Task, factory: AgentFactory, **kwargs: Any) -> tuple[int, int]:
+    """Survival: the same data in a drifted shape, the same right answer. A proxy for an API change."""
+    return run_variants(task, task.drifts, "drift", factory, **kwargs)
 
 
 def saw_injection(task: Task, history: Sequence[Observation]) -> bool:
@@ -183,6 +270,9 @@ def run_task(
     max_steps: int = 10,
     max_forges: int = 2,
     timeout_s: float = 10.0,
+    require_tests: bool = False,
+    hidden: bool = True,
+    survival: bool = True,
 ) -> TaskResult:
     inputs = workdir / "inputs"
     inputs.mkdir(parents=True)
@@ -193,8 +283,9 @@ def run_task(
     try:
         planner, inner = factory(task, sorted(task.files))
         recorder = forger = _RecordingForger(inner)
-        result = Orchestrator(
-            registry=Registry(workdir / "registry"),
+        registry = Registry(workdir / "registry")
+        orchestrator = Orchestrator(
+            registry=registry,
             planner=planner,
             forger=forger,
             image=image,
@@ -203,9 +294,19 @@ def run_task(
             max_steps=max_steps,
             max_forges=max_forges,
             timeout_s=timeout_s,
+            require_tests=require_tests,
             ask=ask,
             show=show,
-        ).run(task.prompt)
+        )
+        result = orchestrator.run(task.prompt)
+        followed_now = followed_need_injection(task, result.history) or followed_call_injection(task, result.history)
+        same = dict(registry=registry, image=image, workdir=workdir, ask=ask, show=show, max_steps=max_steps, timeout_s=timeout_s)
+        hidden_passed = hidden_total = survival_passed = survival_total = 0
+        if hidden and result.forged and task.variants:
+            hidden_passed, hidden_total = run_hidden(task, factory, **same)
+        # survival only means something for a tool that was right before the drift
+        if survival and result.forged and task.drifts and is_correct(task, result.answer) and not followed_now:
+            survival_passed, survival_total = run_survival(task, factory, **same)
     except Exception as exc:  # a model or router failure is a result, not a crash of the whole run
         return TaskResult(task.id, "error", None, False, False, 0, {}, (), 0, time.monotonic() - start, f"{type(exc).__name__}: {exc}"[:300], drafts=tuple(recorder.drafts) if recorder else ())
     # a refused request ("forge budget used up") is not an attempt
@@ -227,6 +328,12 @@ def run_task(
         failures=tuple(f"{stage_of_failure(o.text)}: {o.text}"[:200] for o in forges if not o.ok),
         drafts=tuple(recorder.drafts),
         injection_seen=saw_injection(task, result.history),
+        own_tests=own_tests_passed(result.history),
+        hidden_passed=hidden_passed,
+        hidden_total=hidden_total,
+        survival_passed=survival_passed,
+        survival_total=survival_total,
+        staging_traces=tuple(asdict(t) for t in orchestrator.traces[:MAX_TRACES]),
         trace=tuple(Step(o.kind, o.subject[:80], o.ok, o.text[:MAX_TRACE_CHARS]) for o in result.history),
     )
 
@@ -238,7 +345,7 @@ def run_benchmark(
     tasks: Sequence[Task] = TASKS,
     ask: Callable[[str], str] = ask_human,
     show: Callable[[str], None] = print,
-    **kwargs: float,
+    **kwargs: Any,
 ) -> list[TaskResult]:
     base = Path(tempfile.mkdtemp(prefix="forge-bench-"))
     try:
@@ -272,6 +379,12 @@ def summarize(results: Sequence[TaskResult]) -> dict[str, object]:
         "injected": sum(r.injected for r in results),
         "injection_seen": sum(r.injection_seen for r in results),
         "by_tier": by_tier,
+        "hidden_passed": sum(r.hidden_passed for r in results),
+        "hidden_total": sum(r.hidden_total for r in results),
+        "survival_passed": sum(r.survival_passed for r in results),
+        "survival_total": sum(r.survival_total for r in results),
+        "tools_with_own_tests": sum(r.own_tests > 0 for r in results),
+        "correct_and_hidden": sum(r.correct and r.hidden_total > 0 and r.hidden_passed == r.hidden_total for r in results),
     }
 
 
@@ -292,6 +405,17 @@ def format_report(model: str, results: Sequence[TaskResult], *, auto_approve: bo
         "by tier: " + ", ".join(f"{k} {v}" for k, v in s["by_tier"].items()),  # type: ignore[attr-defined]
         f"failed forge attempts stopped at: {s['stopped_at'] or 'none'}",
     ]
+    if s["survival_total"]:
+        lines.append(
+            f"survival after input drift: {s['survival_passed']} of {s['survival_total']} tools that were right first still answered right "
+            "when column order, extra fields, line endings or tabs changed (a proxy for an API change, not a real one)."
+        )
+    if s["hidden_total"]:
+        lines.append(
+            f"hidden test set: {s['hidden_passed']} of {s['hidden_total']} variant questions answered right by registered tools; "
+            f"{s['correct_and_hidden']} task(s) right on the main question and every variant; "
+            f"{s['tools_with_own_tests']} registered tool(s) passed their own tests first."
+        )
     reasons = [f"  {r.task_id}: {f}" for r in results for f in r.failures]
     if reasons:
         lines += ["", "why attempts failed:", *reasons]
@@ -321,6 +445,10 @@ def summarize_runs(runs: Sequence[Sequence[TaskResult]]) -> dict[str, object]:
         "errors": sum(r.status == "error" for run in runs for r in run),
         "injection_seen": sum(r.injection_seen for run in runs for r in run),
         "injected": sum(r.injected for run in runs for r in run),
+        "hidden_passed": sum(r.hidden_passed for run in runs for r in run),
+        "hidden_total": sum(r.hidden_total for run in runs for r in run),
+        "survival_passed": sum(r.survival_passed for run in runs for r in run),
+        "survival_total": sum(r.survival_total for run in runs for r in run),
     }
 
 

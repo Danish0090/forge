@@ -48,6 +48,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--auto-approve", action="store_true", help="answer yes at the human gate; recorded in the report")
     b.add_argument("--runs", type=int, default=1, help=f"repeat the selection N times (1 to {benchmark.MAX_RUNS})")
     b.add_argument("--tier", help="easy or hard (default: all tasks)")
+    b.add_argument("--require-tests", action="store_true", help="a tool must come with forger-written tests that pass in staging")
+    b.add_argument("--no-survival", action="store_true", help="skip the drifted-input survival check (saves planner calls)")
+    b.add_argument("--no-hidden", action="store_true", help="skip the hidden test set (saves planner calls)")
     b.add_argument("--allow-paid", action="store_true", help="permit paid models (spend is capped)")
     b.add_argument("--max-cost", type=float, help="spend cap in USD for the whole run (default 0.50, max 5)")
     b.add_argument("--out", type=Path, help="write the JSON report here")
@@ -110,7 +113,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     show = (lambda _t: None) if args.auto_approve else print
     try:
         runs = [
-            benchmark.run_benchmark(factory, image=image, tasks=chosen, ask=ask, show=show)
+            benchmark.run_benchmark(
+                factory, image=image, tasks=chosen, ask=ask, show=show,
+                require_tests=args.require_tests, hidden=not args.no_hidden, survival=not args.no_survival,
+            )
             for _ in range(args.runs)
         ]
     except RouterError as exc:

@@ -24,7 +24,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -34,7 +34,9 @@ from forge.checks.hash_pin import tree_hash
 from forge.registry import RegisteredTool, Registry, RegistryError
 from forge.sandbox.policy import CODE_DIR, PolicyError, SandboxPolicy
 from forge.sandbox.runner import run_in_sandbox
+from forge.staging.cases import StagingCase
 from forge.staging.stager import run_staging
+from forge.staging.trace import StagingTrace, summarize_traces
 
 MAX_ARGS_BYTES = 8_192
 MAX_OBSERVATION_CHARS = 4_000
@@ -76,6 +78,7 @@ class ToolDraft:
     tool_dir: Path  # absolute folder holding tool.py
     description: str
     staging_args: dict[str, Any] = field(default_factory=dict)
+    tests: tuple[StagingCase, ...] = ()  # forger-written cases, run in staging (data, never code)
 
 
 class Planner(Protocol):
@@ -109,6 +112,7 @@ class Orchestrator:
         max_steps: int = 10,
         max_forges: int = 2,
         timeout_s: float = 10.0,
+        require_tests: bool = False,
         ask: Callable[[str], str] = ask_human,
         show: Callable[[str], None] = print,
     ) -> None:
@@ -121,6 +125,8 @@ class Orchestrator:
         self._max_steps = max_steps
         self._max_forges = max_forges
         self._timeout_s = timeout_s
+        self._require_tests = require_tests
+        self.traces: list[StagingTrace] = []  # every staging run of every attempt, for reports
         self._ask = ask
         self._show = show
 
@@ -172,14 +178,26 @@ class Orchestrator:
             if not checks.passed:
                 return fail(f"checks failed: {_finding_names(checks.findings)}")
 
+            if self._require_tests and not draft.tests:
+                return fail("staging failed: the forger wrote no tests")
             try:
                 report = run_staging(
-                    self._image, draft.tool_dir, self._inputs_dir, command, timeout_s=self._timeout_s
+                    self._image,
+                    draft.tool_dir,
+                    self._inputs_dir,
+                    command,
+                    timeout_s=self._timeout_s,
+                    cases=draft.tests,
+                    case_command=_command,
                 )
             except PolicyError as exc:
                 return fail(f"staging could not start: {exc}")
+            self.traces.extend(replace(t, tool=draft.name) for t in report.traces)
             if not report.passed:
                 return fail(f"staging failed: {_finding_names(report.findings)}")
+            summary = summarize_traces(report.traces)
+            if summary:
+                self._show(summary)
 
             decision = request_approval(
                 draft.tool_dir,
@@ -196,7 +214,8 @@ class Orchestrator:
                 entry = self._registry.register(draft.name, draft.tool_dir, draft.description, decision)
             except RegistryError as exc:
                 return fail(f"registry refused: {exc}")
-            return Observation("forge", need, True, f"registered {entry.name} v{entry.version}"), entry.name
+            note = f" ({report.cases_passed} own tests passed)" if report.cases_run else ""
+            return Observation("forge", need, True, f"registered {entry.name} v{entry.version}{note}"), entry.name
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 

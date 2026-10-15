@@ -231,3 +231,127 @@ def test_non_serializable_args_are_rejected(tmp_path: Path, inputs: Path, sandbo
     o, _, _ = build(tmp_path, inputs, planner, ScriptedForger())
     o.run("t")
     assert not planner.seen_history[2][-1].ok
+
+
+
+# --- forger-written tests ---------------------------------------------------------------------------
+
+from forge.staging import cases as cases_mod  # noqa: E402
+from forge.staging.cases import StagingCase  # noqa: E402
+
+OWN_CASE = StagingCase(args={"path": "/inputs/a.txt"}, expect="42", files={"a.txt": "a b c\n"})
+
+
+class ForgerWithTests(ScriptedForger):
+    def __init__(self, tests: tuple[StagingCase, ...]) -> None:
+        super().__init__()
+        self.tests = tests
+
+    def forge(self, need: str, workdir: Path) -> ToolDraft:
+        return replace(super().forge(need, workdir), tests=self.tests)
+
+
+class CaseSandbox:
+    """Stands in for the sandbox the cases run in. `stdout` is what every case run prints."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[SandboxPolicy, list[str]]] = []
+        self.stdout = "42\n"
+
+    def __call__(self, policy: SandboxPolicy, command: list[str]) -> SandboxResult:
+        self.calls.append((policy, list(command)))
+        return ok_result(stdout=self.stdout)
+
+
+@pytest.fixture
+def case_sandbox(monkeypatch: pytest.MonkeyPatch) -> CaseSandbox:
+    fake = CaseSandbox()
+    monkeypatch.setattr(cases_mod, "run_in_sandbox", fake)
+    return fake
+
+
+def build_with_tests(tmp_path: Path, inputs: Path, planner, forger, *, asked: list[str], **extra) -> tuple[Orchestrator, Registry]:
+    reg = Registry(tmp_path / "registry")
+
+    def ask(prompt: str) -> str:
+        asked.append(prompt)
+        return "yes"
+
+    o = Orchestrator(
+        registry=reg, planner=planner, forger=forger, image=DIGEST, inputs_dir=inputs,
+        workdir=tmp_path / "work", ask=ask, show=lambda _t: None, **extra,
+    )
+    return o, reg
+
+
+def test_a_draft_with_passing_tests_registers_and_reports_them(tmp_path: Path, inputs: Path, sandbox_calls, case_sandbox) -> None:
+    planner = ScriptedPlanner([NeedTool("count words"), Finish("done")])
+    o, reg = build_with_tests(tmp_path, inputs, planner, ForgerWithTests((OWN_CASE, OWN_CASE)), asked=[])
+    r = o.run("t")
+    assert r.forged == ("word_count",)
+    assert "2 own tests passed" in r.history[0].text
+    # each case ran in its own sandbox on its own fixtures, never on the real inputs
+    assert len(case_sandbox.calls) == 2
+    assert all(policy.inputs_dir != inputs for policy, _ in case_sandbox.calls)
+    assert case_sandbox.calls[0][1] == ["python", "/app/tool.py", json.dumps(OWN_CASE.args)]
+
+
+def test_a_failing_test_stops_the_tool_before_any_human_is_asked(tmp_path: Path, inputs: Path, sandbox_calls, case_sandbox) -> None:
+    case_sandbox.stdout = "7\n"
+    planner = ScriptedPlanner([NeedTool("count words"), Finish("gave up")])
+    asked: list[str] = []
+    o, reg = build_with_tests(tmp_path, inputs, planner, ForgerWithTests((OWN_CASE,)), asked=asked)
+    r = o.run("t")
+    assert r.forged == ()
+    assert r.history[0].text.startswith("staging failed") and "staging-test-failed" in r.history[0].text
+    assert asked == []
+    assert reg.list_tools() == []
+
+
+def test_tests_are_required_only_when_asked(tmp_path: Path, inputs: Path, sandbox_calls, case_sandbox) -> None:
+    planner = ScriptedPlanner([NeedTool("count words"), Finish("x")])
+    o, reg = build_with_tests(tmp_path, inputs, planner, ScriptedForger(), asked=[], require_tests=True)
+    r = o.run("t")
+    assert r.forged == ()
+    assert r.history[0].text == "staging failed: the forger wrote no tests"
+    assert sandbox_calls == [] and case_sandbox.calls == []  # refused before anything ran
+
+
+def test_drafts_without_tests_still_register_by_default(tmp_path: Path, inputs: Path, sandbox_calls, case_sandbox) -> None:
+    planner = ScriptedPlanner([NeedTool("count words"), Finish("x")])
+    o, reg = build_with_tests(tmp_path, inputs, planner, ScriptedForger(), asked=[])
+    r = o.run("t")
+    assert r.forged == ("word_count",)
+    assert r.history[0].text == "registered word_count v1"
+
+
+# --- staging traces ----------------------------------------------------------------------------------
+
+
+def test_traces_are_kept_per_tool_and_shown_to_the_reviewer(tmp_path: Path, inputs: Path, sandbox_calls) -> None:
+    planner = ScriptedPlanner([NeedTool("count words"), Finish("done")])
+    o, reg, shown = build(tmp_path, inputs, planner, ScriptedForger())
+    o.run("t")
+    assert [(t.tool, t.label) for t in o.traces] == [("word_count", "main")]
+    assert o.traces[0].stdout == "42\n" and o.traces[0].exit_code == 0
+    trace_lines = [line for line in shown if line.startswith("Staging trace:")]
+    assert len(trace_lines) == 1 and "main run exit 0" in trace_lines[0]
+    # the summary is shown before the approval prompt reads the diff
+    assert shown.index(trace_lines[0]) < len(shown) - 1
+
+
+def test_a_stopped_attempt_still_leaves_its_trace(tmp_path: Path, inputs: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(stager, "run_in_sandbox", lambda policy, command: ok_result(exit_code=1, stdout="", stderr="Traceback: boom"))
+    planner = ScriptedPlanner([NeedTool("count words"), Finish("gave up")])
+    o, reg, shown = build(tmp_path, inputs, planner, ScriptedForger())
+    r = o.run("t")
+    assert r.forged == ()
+    assert [t.stderr for t in o.traces] == ["Traceback: boom"]
+    assert not any(line.startswith("Staging trace:") for line in shown)  # nobody is asked about a failed tool
+
+
+def test_traces_are_not_kept_when_checks_stop_the_tool_first(tmp_path: Path, inputs: Path, sandbox_calls) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg, _ = build(tmp_path, inputs, planner, ScriptedForger(body="import socket\n"))
+    o.run("t")
+    assert o.traces == [] and sandbox_calls == []

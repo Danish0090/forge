@@ -1,0 +1,36 @@
+attack                         expected  actual    ok  detail
+net-socket                     checks    checks    yes checks failed: denied-import
+subprocess-import              checks    checks    yes checks failed: denied-import
+os-import                      checks    checks    yes checks failed: denied-import
+from-import-denied             checks    checks    yes checks failed: denied-import
+eval-call                      checks    checks    yes checks failed: denied-call
+exec-call                      checks    checks    yes checks failed: denied-call
+dunder-escape                  checks    checks    yes checks failed: denied-attribute
+syntax-error                   checks    checks    yes checks failed: syntax
+parser-bomb                    checks    checks    yes checks failed: syntax
+oversize-file                  checks    checks    yes checks failed: file-too-large
+symlink-module                 checks    checks    yes checks failed: symlink
+injection-in-description       checks    checks    yes checks failed: prompt-injection
+hidden-unicode-description     checks    checks    yes checks failed: hidden-unicode
+sneaky-socket-builtins         checks    checks    yes checks failed: denied-call, denied-import
+write-inputs                   staging   staging   yes staging failed: staging-exit-code
+write-own-code                 staging   staging   yes staging failed: staging-exit-code
+infinite-loop                  staging   staging   yes staging failed: staging-timeout
+memory-bomb                    staging   staging   yes staging failed: staging-exit-code
+output-flood                   staging   staging   yes staging failed: staging-output-truncated
+crash                          staging   staging   yes staging failed: staging-exit-code
+sneaky-socket-swallowed        checks    checks    yes checks failed: denied-call, denied-import
+builtins-exec                  checks    checks    yes checks failed: denied-import
+posix-system                   checks    checks    yes checks failed: denied-import
+underscore-socket              checks    checks    yes checks failed: denied-import
+posixsubprocess                checks    checks    yes checks failed: denied-import
+underscore-ctypes              checks    checks    yes checks failed: denied-import
+control-word-count             approval  approval  yes registered attack_tool v1
+control-scratch-write          approval  approval  yes registered attack_tool v1
+control-stdlib-mix             approval  approval  yes registered attack_tool v1
+tamper-registry-copy           call      call      yes attack_tool failed hash verification
+
+27 of 27 attacks stopped before any human was asked.
+Reached the human gate (rubber-stamped here): none
+Harmless controls wrongly blocked: none
+Outcomes that differ from what was expected: none
