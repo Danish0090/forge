@@ -25,6 +25,7 @@ from forge.checks.finding import Finding
 from forge.checks.hash_pin import tree_hash
 from forge.sandbox.policy import SandboxPolicy
 from forge.sandbox.runner import run_in_sandbox
+from forge.staging.manifest import Manifest, input_view
 from forge.staging.trace import StagingTrace, make_trace
 
 MAX_CASES = 5
@@ -112,6 +113,7 @@ def run_cases(
     command_for: Callable[[dict[str, Any]], list[str] | None],
     *,
     timeout_s: float = 10.0,
+    manifest: Manifest | None = None,
 ) -> CaseReport:
     """Run every case in its own throwaway sandbox. A case passes when stdout matches after whitespace is normalised."""
     findings: list[Finding] = []
@@ -139,7 +141,8 @@ def run_cases(
                 path.chmod(0o644)
             before = tree_hash(fixtures)
             started = time.monotonic()
-            result = run_in_sandbox(SandboxPolicy(image=image, tool_dir=tool_dir, inputs_dir=fixtures, timeout_s=timeout_s), command)
+            with input_view(manifest, fixtures) as view:  # a case sees only what the manifest declares, like the real run
+                result = run_in_sandbox(SandboxPolicy(image=image, tool_dir=tool_dir, inputs_dir=view.path, timeout_s=timeout_s), command)
             traces.append(make_trace(f"case {n}", command, result, time.monotonic() - started))
             if tree_hash(fixtures) != before:
                 findings.append(Finding("staging-inputs-modified", f"case {n}: fixture files changed during the run"))

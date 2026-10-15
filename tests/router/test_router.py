@@ -412,3 +412,47 @@ def test_forger_prompt_example_shows_an_escaped_newline_not_a_real_one(tmp_path:
     ModelForger(r).forge("n", tmp_path)
     system = backend.calls[0]["messages"][0]["content"]
     assert '"a.txt":"one two\\n"' in system  # a backslash and an n, so the example stays one line of valid JSON
+
+
+# --- capability manifest ----------------------------------------------------------------------------------
+
+
+def test_forger_writes_the_manifest_into_the_tool_folder(tmp_path: Path) -> None:
+    r, _ = router(json.dumps({**GOOD, "manifest": {"reads": ["notes.txt"]}}))
+    draft = ModelForger(r).forge("n", tmp_path)
+    written = json.loads((draft.tool_dir / "manifest.json").read_text())
+    assert written == {"reads": ["notes.txt"], "network": []}
+
+
+def test_a_draft_without_a_manifest_gets_no_manifest_file(tmp_path: Path) -> None:
+    r, _ = router(json.dumps(GOOD))
+    draft = ModelForger(r).forge("n", tmp_path)
+    assert not (draft.tool_dir / "manifest.json").exists()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"reads": ["notes.txt"], "network": ["evil.example"]}, {"reads": ["../x"]}, {"reads": "notes.txt"}, "reads notes.txt", ["notes.txt"], {}],
+)
+def test_a_bad_manifest_is_retried_with_the_reason(tmp_path: Path, bad: object) -> None:
+    good = {**GOOD, "manifest": {"reads": ["notes.txt"]}}
+    r, backend = router(json.dumps({**GOOD, "manifest": bad}), json.dumps(good))
+    draft = ModelForger(r).forge("n", tmp_path)
+    assert (draft.tool_dir / "manifest.json").exists()
+    assert "manifest is invalid" in backend.calls[1]["messages"][1]["content"]
+
+
+def test_forger_gives_up_on_an_endless_bad_manifest_and_leaves_nothing_behind(tmp_path: Path) -> None:
+    bad = json.dumps({**GOOD, "manifest": {"reads": [], "network": ["evil.example"]}})
+    r, backend = router(bad, bad, bad)
+    with pytest.raises(RouterError):
+        ModelForger(r).forge("n", tmp_path)
+    assert len(backend.calls) == 3 and list(tmp_path.iterdir()) == []
+
+
+def test_forger_prompt_asks_for_a_manifest_and_says_the_network_is_off(tmp_path: Path) -> None:
+    r, backend = router(json.dumps(GOOD))
+    ModelForger(r).forge("n", tmp_path)
+    system = backend.calls[0]["messages"][0]["content"]
+    assert '"manifest"' in system and '"reads"' in system
+    assert "only those files" in system.lower() and "no network" in system.lower()

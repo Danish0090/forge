@@ -34,7 +34,7 @@
         "word_count"
       ],
       "steps": 2,
-      "seconds": 1.8098079579940531,
+      "seconds": 1.8913499580230564,
       "error": null,
       "failures": [],
       "drafts": [
@@ -44,7 +44,8 @@
           "description": "Counts words in a text file. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/notes.txt"
-          }
+          },
+          "manifest": "{\"reads\": [\"notes.txt\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -76,7 +77,7 @@
             "{\"path\": \"/inputs/notes.txt\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.413,
+          "seconds": 0.368,
           "stdout": "18\n",
           "stderr": "",
           "stdout_bytes": 3,
@@ -91,7 +92,7 @@
             "{\"path\": \"/inputs/notes.txt\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.362,
+          "seconds": 0.306,
           "stdout": "10\n",
           "stderr": "",
           "stdout_bytes": 3,
@@ -112,7 +113,7 @@
         "count_errors"
       ],
       "steps": 2,
-      "seconds": 1.9379482909862418,
+      "seconds": 1.8721600829740055,
       "error": null,
       "failures": [],
       "drafts": [
@@ -122,7 +123,8 @@
           "description": "Counts lines containing the level ERROR in a log. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/app.log"
-          }
+          },
+          "manifest": "{\"reads\": [\"app.log\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -154,7 +156,7 @@
             "{\"path\": \"/inputs/app.log\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.361,
+          "seconds": 0.374,
           "stdout": "3\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -169,7 +171,7 @@
             "{\"path\": \"/inputs/app.log\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.355,
+          "seconds": 0.372,
           "stdout": "2\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -190,7 +192,7 @@
         "sum_amount"
       ],
       "steps": 2,
-      "seconds": 1.8765402910066769,
+      "seconds": 1.8314335839822888,
       "error": null,
       "failures": [],
       "drafts": [
@@ -200,7 +202,8 @@
           "description": "Sums the integer amount column of a CSV. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/sales.csv"
-          }
+          },
+          "manifest": "{\"reads\": [\"sales.csv\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -232,7 +235,7 @@
             "{\"path\": \"/inputs/sales.csv\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.358,
+          "seconds": 0.361,
           "stdout": "460\n",
           "stderr": "",
           "stdout_bytes": 4,
@@ -247,7 +250,7 @@
             "{\"path\": \"/inputs/sales.csv\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.362,
+          "seconds": 0.364,
           "stdout": "400\n",
           "stderr": "",
           "stdout_bytes": 4,
@@ -268,7 +271,7 @@
         "unique_users"
       ],
       "steps": 2,
-      "seconds": 1.8236587919818703,
+      "seconds": 1.8230997920036316,
       "error": null,
       "failures": [],
       "drafts": [
@@ -278,7 +281,8 @@
           "description": "Counts distinct \"user\" values in a JSON-lines file. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/events.jsonl"
-          }
+          },
+          "manifest": "{\"reads\": [\"events.jsonl\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -310,7 +314,7 @@
             "{\"path\": \"/inputs/events.jsonl\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.411,
+          "seconds": 0.368,
           "stdout": "4\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -325,7 +329,7 @@
             "{\"path\": \"/inputs/events.jsonl\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.309,
+          "seconds": 0.357,
           "stdout": "3\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -346,7 +350,7 @@
         "top_score"
       ],
       "steps": 2,
-      "seconds": 1.9141206670028623,
+      "seconds": 1.8869225840026047,
       "error": null,
       "failures": [],
       "drafts": [
@@ -356,7 +360,8 @@
           "description": "Finds the maximum integer score in a CSV. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/scores.csv"
-          }
+          },
+          "manifest": "{\"reads\": [\"scores.csv\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -388,7 +393,7 @@
             "{\"path\": \"/inputs/scores.csv\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.404,
+          "seconds": 0.386,
           "stdout": "93\n",
           "stderr": "",
           "stdout_bytes": 3,
@@ -403,7 +408,7 @@
             "{\"path\": \"/inputs/scores.csv\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.355,
+          "seconds": 0.357,
           "stdout": "102\n",
           "stderr": "",
           "stdout_bytes": 4,
@@ -424,7 +429,7 @@
         "west_total"
       ],
       "steps": 2,
-      "seconds": 1.8965428750088904,
+      "seconds": 2.04807620801148,
       "error": null,
       "failures": [],
       "drafts": [
@@ -436,7 +441,8 @@
             "orders": "/inputs/orders.csv",
             "customers": "/inputs/customers.csv",
             "region": "west"
-          }
+          },
+          "manifest": "{\"reads\": [\"customers.csv\", \"orders.csv\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -468,7 +474,7 @@
             "{\"orders\": \"/inputs/orders.csv\", \"customers\": \"/inputs/customers.csv\", \"region\": \"west\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.364,
+          "seconds": 0.422,
           "stdout": "200\n",
           "stderr": "",
           "stdout_bytes": 4,
@@ -483,7 +489,7 @@
             "{\"orders\": \"/inputs/orders.csv\", \"customers\": \"/inputs/customers.csv\", \"region\": \"west\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.37,
+          "seconds": 0.414,
           "stdout": "105\n",
           "stderr": "",
           "stdout_bytes": 4,
@@ -504,7 +510,7 @@
         "ledger_total"
       ],
       "steps": 2,
-      "seconds": 1.8806787080247886,
+      "seconds": 1.8717321250005625,
       "error": null,
       "failures": [],
       "drafts": [
@@ -514,7 +520,8 @@
           "description": "Sums a messy money column of a CSV. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/ledger.csv"
-          }
+          },
+          "manifest": "{\"reads\": [\"ledger.csv\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -546,7 +553,7 @@
             "{\"path\": \"/inputs/ledger.csv\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.367,
+          "seconds": 0.364,
           "stdout": "3045.75\n",
           "stderr": "",
           "stdout_bytes": 8,
@@ -561,7 +568,7 @@
             "{\"path\": \"/inputs/ledger.csv\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.359,
+          "seconds": 0.411,
           "stdout": "1508.00\n",
           "stderr": "",
           "stdout_bytes": 8,
@@ -582,7 +589,7 @@
         "errors_in_window"
       ],
       "steps": 2,
-      "seconds": 1.7764588750142138,
+      "seconds": 1.785985750000691,
       "error": null,
       "failures": [],
       "drafts": [
@@ -594,7 +601,8 @@
             "path": "/inputs/server.log",
             "start": "08:00:00",
             "end": "08:30:00"
-          }
+          },
+          "manifest": "{\"reads\": [\"server.log\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -626,7 +634,7 @@
             "{\"path\": \"/inputs/server.log\", \"start\": \"08:00:00\", \"end\": \"08:30:00\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.36,
+          "seconds": 0.365,
           "stdout": "3\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -641,7 +649,7 @@
             "{\"path\": \"/inputs/server.log\", \"start\": \"08:00:00\", \"end\": \"08:30:00\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.355,
+          "seconds": 0.413,
           "stdout": "2\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -662,7 +670,7 @@
         "users_ending_logged_out"
       ],
       "steps": 2,
-      "seconds": 1.8682191249972675,
+      "seconds": 1.8737606670183595,
       "error": null,
       "failures": [],
       "drafts": [
@@ -672,7 +680,8 @@
           "description": "Counts users whose latest event by ts is a logout. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/events2.jsonl"
-          }
+          },
+          "manifest": "{\"reads\": [\"events2.jsonl\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -704,7 +713,7 @@
             "{\"path\": \"/inputs/events2.jsonl\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.36,
+          "seconds": 0.354,
           "stdout": "2\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -719,7 +728,7 @@
             "{\"path\": \"/inputs/events2.jsonl\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.363,
+          "seconds": 0.362,
           "stdout": "3\n",
           "stderr": "",
           "stdout_bytes": 2,
@@ -740,7 +749,7 @@
         "date_span_days"
       ],
       "steps": 2,
-      "seconds": 1.8823359170055483,
+      "seconds": 1.8265767080010846,
       "error": null,
       "failures": [],
       "drafts": [
@@ -750,7 +759,8 @@
           "description": "Days between the earliest and latest date in a CSV column. Args: {\"path\": str}",
           "staging_args": {
             "path": "/inputs/dates.csv"
-          }
+          },
+          "manifest": "{\"reads\": [\"dates.csv\"], \"network\": []}"
         }
       ],
       "trace": [
@@ -782,7 +792,7 @@
             "{\"path\": \"/inputs/dates.csv\"}"
           ],
           "exit_code": 0,
-          "seconds": 0.422,
+          "seconds": 0.316,
           "stdout": "49\n",
           "stderr": "",
           "stdout_bytes": 3,

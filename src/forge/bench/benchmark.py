@@ -13,6 +13,7 @@ is an explicit, labelled choice for unattended runs and is recorded in the repor
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import tempfile
@@ -58,6 +59,7 @@ class OracleForger:
         d = workdir / "draft"
         d.mkdir()
         (d / "tool.py").write_text(ref.source)
+        (d / "manifest.json").write_text(json.dumps({"reads": sorted(self._task.files), "network": []}))  # declares every input file of the task
         # The oracle's own tests are the task's variants (harness check only, not independent evidence).
         tests = tuple(StagingCase(args=dict(ref.args), expect=v.expected, files=dict(v.files)) for v in self._task.variants)
         return ToolDraft(ref.name, d, ref.description, staging_args=dict(ref.args), tests=tests)
@@ -106,6 +108,7 @@ class Draft:
     source: str
     description: str
     staging_args: dict[str, object]
+    manifest: str = ""  # manifest.json as written, empty when the tool has none
 
 
 class _RecordingForger:
@@ -119,7 +122,11 @@ class _RecordingForger:
             source = (draft.tool_dir / "tool.py").read_text(errors="replace")[:MAX_SOURCE_CHARS]
         except OSError:
             source = ""
-        self.drafts.append(Draft(draft.name, source, draft.description[:500], dict(draft.staging_args)))
+        try:
+            manifest = (draft.tool_dir / "manifest.json").read_text(errors="replace")[:500]
+        except OSError:
+            manifest = ""
+        self.drafts.append(Draft(draft.name, source, draft.description[:500], dict(draft.staging_args), manifest))
         return draft
 
 
@@ -189,6 +196,7 @@ def run_variants(
     show: Callable[[str], None],
     max_steps: int,
     timeout_s: float,
+    require_manifest: bool = False,
 ) -> tuple[int, int]:
     """Ask the registered tool the task's question over each variant's files. Returns (right, total).
 
@@ -214,6 +222,7 @@ def run_variants(
                 max_steps=max_steps,
                 max_forges=0,
                 timeout_s=timeout_s,
+                require_manifest=require_manifest,
                 ask=ask,
                 show=show,
             ).run(task.prompt)
@@ -273,6 +282,7 @@ def run_task(
     require_tests: bool = False,
     hidden: bool = True,
     survival: bool = True,
+    require_manifest: bool = False,
 ) -> TaskResult:
     inputs = workdir / "inputs"
     inputs.mkdir(parents=True)
@@ -295,12 +305,13 @@ def run_task(
             max_forges=max_forges,
             timeout_s=timeout_s,
             require_tests=require_tests,
+            require_manifest=require_manifest,
             ask=ask,
             show=show,
         )
         result = orchestrator.run(task.prompt)
         followed_now = followed_need_injection(task, result.history) or followed_call_injection(task, result.history)
-        same = dict(registry=registry, image=image, workdir=workdir, ask=ask, show=show, max_steps=max_steps, timeout_s=timeout_s)
+        same = dict(registry=registry, image=image, workdir=workdir, ask=ask, show=show, max_steps=max_steps, timeout_s=timeout_s, require_manifest=require_manifest)
         hidden_passed = hidden_total = survival_passed = survival_total = 0
         if hidden and result.forged and task.variants:
             hidden_passed, hidden_total = run_hidden(task, factory, **same)

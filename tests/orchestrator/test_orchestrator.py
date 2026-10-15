@@ -355,3 +355,180 @@ def test_traces_are_not_kept_when_checks_stop_the_tool_first(tmp_path: Path, inp
     o, reg, _ = build(tmp_path, inputs, planner, ScriptedForger(body="import socket\n"))
     o.run("t")
     assert o.traces == [] and sandbox_calls == []
+
+
+# --- capability manifest -------------------------------------------------------------------------------
+
+import json as _json  # noqa: E402
+
+MANIFEST_NOTES = _json.dumps({"reads": ["notes.txt"]})
+
+
+class ForgerWithManifest(ScriptedForger):
+    def __init__(self, manifest: str | None, **kwargs: str) -> None:
+        super().__init__(**kwargs)
+        self.manifest = manifest
+
+    def forge(self, need: str, workdir: Path) -> ToolDraft:
+        draft = super().forge(need, workdir)
+        if self.manifest is not None:
+            (draft.tool_dir / "manifest.json").write_text(self.manifest)
+        return draft
+
+
+@pytest.fixture
+def two_inputs(tmp_path: Path) -> Path:
+    d = tmp_path / "inputs"
+    d.mkdir()
+    (d / "notes.txt").write_text("one two\n")
+    (d / "secret.txt").write_text("TOP SECRET\n")
+    return d
+
+
+class Mounts:
+    """Records which files the sandbox could see on every run, and answers like a working tool."""
+
+    def __init__(self) -> None:
+        self.runs: list[dict] = []
+
+    def __call__(self, policy: SandboxPolicy, command: list[str]) -> SandboxResult:
+        mounted = policy.inputs_dir
+        self.runs.append({"path": mounted, "files": sorted(p.name for p in mounted.rglob("*") if p.is_file()), "command": list(command)})
+        return ok_result()
+
+
+@pytest.fixture
+def mounts(monkeypatch: pytest.MonkeyPatch) -> Mounts:
+    fake = Mounts()
+    monkeypatch.setattr(stager, "run_in_sandbox", fake)
+    monkeypatch.setattr(orch_mod, "run_in_sandbox", fake)
+    return fake
+
+
+def test_staging_and_later_calls_see_only_the_declared_files(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    planner = ScriptedPlanner([NeedTool("count words"), CallTool("word_count", {}), Finish("ok")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, ForgerWithManifest(MANIFEST_NOTES))
+    r = o.run("t")
+    assert r.forged == ("word_count",)
+    assert [m["files"] for m in mounts.runs] == [["notes.txt"], ["notes.txt"]]  # staging run, then the real call
+    assert all(m["path"] != two_inputs for m in mounts.runs)
+    assert all(not m["path"].exists() for m in mounts.runs)  # views are cleaned up
+
+
+def test_without_a_manifest_behaviour_is_unchanged(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), CallTool("word_count", {}), Finish("ok")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, ForgerWithManifest(None))
+    o.run("t")
+    assert [m["files"] for m in mounts.runs] == [["notes.txt", "secret.txt"]] * 2
+    assert all(m["path"] == two_inputs for m in mounts.runs)
+
+
+def test_a_manifest_that_lists_a_domain_is_stopped_in_checks_and_nothing_runs(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    bad = _json.dumps({"reads": ["notes.txt"], "network": ["evil.example"]})
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, ForgerWithManifest(bad))
+    r = o.run("t")
+    assert r.forged == ()
+    assert r.history[0].text.startswith("checks failed: manifest-invalid") and "no network" in r.history[0].text
+    assert mounts.runs == [] and reg.list_tools() == []
+
+
+@pytest.mark.parametrize("text", ["not json", '{"reads": ["../secret.txt"]}', '{"reads": ["/etc/passwd"]}', '{"reads": "all"}'])
+def test_other_bad_manifests_are_stopped_in_checks(tmp_path: Path, two_inputs: Path, mounts: Mounts, text: str) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, ForgerWithManifest(text))
+    r = o.run("t")
+    assert r.history[0].text.startswith("checks failed: manifest-invalid")
+    assert mounts.runs == []
+
+
+def test_a_symlinked_manifest_is_stopped_in_checks(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    class Linker(ScriptedForger):
+        def forge(self, need: str, workdir: Path) -> ToolDraft:
+            draft = super().forge(need, workdir)
+            (draft.tool_dir / "manifest.json").symlink_to("tool.py")
+            return draft
+
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, Linker())
+    r = o.run("t")
+    assert r.history[0].text.startswith("checks failed: manifest-invalid")
+    assert mounts.runs == []
+
+
+def test_a_manifest_can_be_required(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg = build_with_tests(tmp_path, two_inputs, planner, ForgerWithManifest(None), asked=[], require_manifest=True)
+    r = o.run("t")
+    assert r.history[0].text == "checks failed: manifest-missing"
+    assert mounts.runs == []
+
+
+def test_a_required_manifest_that_is_present_passes(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), Finish("ok")])
+    o, reg = build_with_tests(tmp_path, two_inputs, planner, ForgerWithManifest(MANIFEST_NOTES), asked=[], require_manifest=True)
+    assert o.run("t").forged == ("word_count",)
+
+
+def test_a_declared_file_that_is_not_there_stops_staging(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, ForgerWithManifest(_json.dumps({"reads": ["ghost.txt"]})))
+    r = o.run("t")
+    assert r.history[0].text.startswith("staging failed") and "staging-manifest-missing-file" in r.history[0].text
+    assert reg.list_tools() == []
+
+
+def test_an_input_the_view_cannot_safely_copy_stops_staging(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    (two_inputs / "link.txt").symlink_to(tmp_path / "elsewhere.txt")
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, ForgerWithManifest(_json.dumps({"reads": ["link.txt"]})))
+    r = o.run("t")
+    assert r.history[0].text.startswith("staging could not start")
+    assert mounts.runs == []
+
+
+def test_the_reviewer_sees_the_manifest_before_the_prompt(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), Finish("ok")])
+    o, reg, shown = build(tmp_path, two_inputs, planner, ForgerWithManifest(MANIFEST_NOTES))
+    o.run("t")
+    manifest_lines = [line for line in shown if line.startswith("Manifest:")]
+    assert manifest_lines == ["Manifest: reads notes.txt; network none"]
+    assert shown.index(manifest_lines[0]) < next(i for i, line in enumerate(shown) if line.startswith("Staging trace:"))
+
+
+def test_the_manifest_is_part_of_the_diff_the_human_approves(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    planner = ScriptedPlanner([NeedTool("x"), Finish("ok")])
+    o, reg, shown = build(tmp_path, two_inputs, planner, ForgerWithManifest(MANIFEST_NOTES))
+    o.run("t")
+    assert any("manifest.json" in line and "notes.txt" in line for line in shown) or any("manifest.json" in line for line in shown)
+    assert any('"reads"' in line for line in "\n".join(shown).splitlines())
+
+
+def test_editing_the_manifest_in_the_registry_copy_is_caught_by_the_hash(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    class Planner(ScriptedPlanner):
+        def next_action(self, task, tools, history):  # type: ignore[no-untyped-def]
+            action = super().next_action(task, tools, history)
+            if isinstance(action, CallTool):  # widen the declaration after approval
+                (reg.get("word_count").path / "manifest.json").write_text(_json.dumps({"reads": ["notes.txt", "secret.txt"]}))
+            return action
+
+    planner = Planner([NeedTool("x"), CallTool("word_count", {}), Finish("done")])
+    o, reg, _ = build(tmp_path, two_inputs, planner, ForgerWithManifest(MANIFEST_NOTES))
+    r = o.run("t")
+    call = [h for h in r.history if h.kind == "tool"][0]
+    assert not call.ok and "failed hash verification" in call.text
+    assert len(mounts.runs) == 1  # only the staging run; the widened call never reached the sandbox
+
+
+def test_a_tool_registered_without_a_manifest_is_refused_when_one_is_required(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    reg = Registry(tmp_path / "registry")
+    legacy, _, _ = build(tmp_path, two_inputs, ScriptedPlanner([NeedTool("x"), Finish("ok")]), ForgerWithManifest(None))
+    legacy._registry = reg  # type: ignore[attr-defined]
+    legacy.run("t")
+    strict = Orchestrator(
+        registry=reg, planner=ScriptedPlanner([CallTool("word_count", {}), Finish("done")]), forger=ForgerWithManifest(None),
+        image=DIGEST, inputs_dir=two_inputs, workdir=tmp_path / "w2", ask=lambda _p: "yes", show=lambda _t: None, require_manifest=True,
+    )
+    r = strict.run("t")
+    call = [h for h in r.history if h.kind == "tool"][0]
+    assert not call.ok and "no manifest" in call.text

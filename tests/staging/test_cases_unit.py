@@ -205,3 +205,34 @@ def test_no_cases_means_nothing_runs(tool, fake_sandbox) -> None:
     report = run_cases(DIGEST, tool, (), command_for)
     assert report.findings == () and (report.run, report.passed) == (0, 0)
     assert seen == []
+
+
+# --- the capability manifest also limits what a test case can see ---------------------------------------
+
+from forge.staging.manifest import Manifest  # noqa: E402
+
+
+def test_fixtures_are_filtered_through_the_manifest(tool, fake_sandbox) -> None:
+    seen, _ = fake_sandbox
+    case = good_case(files={"a.txt": "one two three\n", "extra.txt": "should be hidden\n"})
+    run_cases(DIGEST, tool, parse_cases([case]), command_for, manifest=Manifest(("a.txt",)))
+    assert seen[0]["files"] == {"a.txt": "one two three\n"}
+
+
+def test_a_manifest_that_declares_nothing_mounts_an_empty_folder(tool, fake_sandbox) -> None:
+    seen, _ = fake_sandbox
+    run_cases(DIGEST, tool, parse_cases([good_case()]), command_for, manifest=Manifest(()))
+    assert seen[0]["files"] == {}
+
+
+def test_without_a_manifest_every_fixture_is_mounted(tool, fake_sandbox) -> None:
+    seen, _ = fake_sandbox
+    run_cases(DIGEST, tool, parse_cases([good_case(files={"a.txt": "x", "b.txt": "y"})]), command_for)
+    assert set(seen[0]["files"]) == {"a.txt", "b.txt"}
+
+
+def test_view_folders_for_cases_are_removed(tool, fake_sandbox, tmp_path: Path) -> None:
+    import tempfile
+    before = set(Path(tempfile.gettempdir()).glob("forge-view-*"))
+    run_cases(DIGEST, tool, parse_cases([good_case()]), command_for, manifest=Manifest(("a.txt",)))
+    assert set(Path(tempfile.gettempdir()).glob("forge-view-*")) == before

@@ -25,12 +25,22 @@ posix-system                   checks    checks    yes checks failed: denied-imp
 underscore-socket              checks    checks    yes checks failed: denied-import
 posixsubprocess                checks    checks    yes checks failed: denied-import
 underscore-ctypes              checks    checks    yes checks failed: denied-import
+manifest-network-domain        checks    checks    yes checks failed: manifest-invalid (network: domains are not supported because the sandbox has no network (got 'evil.example'); list none)
+manifest-path-traversal        checks    checks    yes checks failed: manifest-invalid (file name '../secret.txt' must be a relative path of plain names (letters, digits, '.', '_', '-'), at most 3 deep)
+manifest-absolute-path         checks    checks    yes checks failed: manifest-invalid (file name '/etc/passwd' must be a relative path of plain names (letters, digits, '.', '_', '-'), at most 3 deep)
+manifest-malformed             checks    checks    yes checks failed: manifest-invalid (manifest is not valid JSON: Expecting value: line 1 column 1 (char 0))
+manifest-symlink               checks    checks    yes checks failed: manifest-invalid (manifest.json must not be a symlink)
+manifest-missing-when-required checks    checks    yes checks failed: manifest-missing
+manifest-undeclared-read       staging   staging   yes staging failed: staging-exit-code
+manifest-declares-a-ghost      staging   staging   yes staging failed: staging-manifest-missing-file
 control-word-count             approval  approval  yes registered attack_tool v1
 control-scratch-write          approval  approval  yes registered attack_tool v1
+control-manifest-declared      approval  approval  yes registered attack_tool v1
 control-stdlib-mix             approval  approval  yes registered attack_tool v1
 tamper-registry-copy           call      call      yes attack_tool failed hash verification
+tamper-manifest-widened        call      call      yes attack_tool failed hash verification
 
-27 of 27 attacks stopped before any human was asked.
+36 of 36 attacks stopped before any human was asked.
 Reached the human gate (rubber-stamped here): none
 Harmless controls wrongly blocked: none
 Outcomes that differ from what was expected: none

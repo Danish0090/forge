@@ -13,6 +13,7 @@ from forge.orchestrator.orchestrator import Action, CallTool, Finish, NeedTool, 
 from forge.registry import RegisteredTool
 from forge.router.router import ModelRouter, RouterError
 from forge.staging.cases import CaseError, parse_cases
+from forge.staging.manifest import MANIFEST_NAME, ManifestError, parse_manifest
 
 _NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 # Any form of the fence tag inside untrusted text (case, spaces, opening or closing) is defanged,
@@ -40,14 +41,17 @@ FORGER_SYSTEM = """You write one small Python 3.12 tool. It runs in a sandbox: s
 no network, read-only inputs under /inputs, scratch writes only. It is run as `python tool.py '<json args>'`
 and prints its result to stdout. A scan rejects `import sys` and `import os`, so read the argument with
 argparse: parser.add_argument("payload"); json.loads(parser.parse_args().payload). Reply with ONE JSON object and nothing else:
-  {"name":"snake_case_name","description":"what it does AND its exact JSON argument names, e.g. Args: {\"path\": str}","code":"<full tool.py>","staging_args":{...},"tests":[...]}
+  {"name":"snake_case_name","description":"what it does AND its exact JSON argument names, e.g. Args: {\"path\": str}","code":"<full tool.py>","staging_args":{...},"tests":[...],"manifest":{"reads":["notes.txt"]}}
 staging_args are sample arguments used to try the tool on real read-only inputs: they must be the same
 object as the Args in your description (same keys), and must point at files that exist under /inputs.
 Also add "tests": 2 or 3 small checks of your own tool. Each test brings its own tiny fixture files, which
 appear under /inputs only for that test, the args to call the tool with, and the exact text the tool should print:
   {"files":{"a.txt":"one two\\n"},"args":{"path":"/inputs/a.txt"},"expect":"2"}
 Work out "expect" by hand from the fixture, not by running anything. Use different inputs in each test and
-include one edge case (an empty file, a blank line, a tie). Tests are data, not code."""
+include one edge case (an empty file, a blank line, a tie). Tests are data, not code.
+Also add "manifest": {"reads": [...]}, the input files your tool reads, by name relative to /inputs (for example
+"notes.txt"). Only those files will be visible to your tool, so list every file it opens and nothing else. There is
+no network at all, so never list a domain. Use "reads": [] for a tool that reads no input file."""
 
 
 def _json_object(reply: str) -> dict[str, Any]:
@@ -148,7 +152,16 @@ class ModelForger:
             tests = parse_cases(data.get("tests"))
         except CaseError as exc:
             raise _Unparsable(f"tests are malformed: {exc}") from None
+        manifest_text: str | None = None
+        if data.get("manifest") is not None:
+            try:
+                manifest = parse_manifest(json.dumps(data["manifest"]))
+            except ManifestError as exc:
+                raise _Unparsable(f"manifest is invalid: {exc}") from None
+            manifest_text = json.dumps({"reads": list(manifest.reads), "network": []})
         tool_dir = workdir.resolve() / f"draft_{name}"
         tool_dir.mkdir()
         (tool_dir / "tool.py").write_text(code)
+        if manifest_text is not None:
+            (tool_dir / MANIFEST_NAME).write_text(manifest_text)
         return ToolDraft(name, tool_dir, description, staging_args, tests)

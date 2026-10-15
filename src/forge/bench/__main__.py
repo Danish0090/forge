@@ -49,6 +49,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--runs", type=int, default=1, help=f"repeat the selection N times (1 to {benchmark.MAX_RUNS})")
     b.add_argument("--tier", help="easy or hard (default: all tasks)")
     b.add_argument("--require-tests", action="store_true", help="a tool must come with forger-written tests that pass in staging")
+    b.add_argument("--require-manifest", action="store_true", help="a tool must declare the input files it reads; it sees only those")
     b.add_argument("--no-survival", action="store_true", help="skip the drifted-input survival check (saves planner calls)")
     b.add_argument("--no-hidden", action="store_true", help="skip the hidden test set (saves planner calls)")
     b.add_argument("--allow-paid", action="store_true", help="permit paid models (spend is capped)")
@@ -115,7 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         runs = [
             benchmark.run_benchmark(
                 factory, image=image, tasks=chosen, ask=ask, show=show,
-                require_tests=args.require_tests, hidden=not args.no_hidden, survival=not args.no_survival,
+                require_tests=args.require_tests, hidden=not args.no_hidden, survival=not args.no_survival, require_manifest=args.require_manifest,
             )
             for _ in range(args.runs)
         ]

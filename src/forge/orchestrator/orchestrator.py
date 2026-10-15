@@ -35,6 +35,7 @@ from forge.registry import RegisteredTool, Registry, RegistryError
 from forge.sandbox.policy import CODE_DIR, PolicyError, SandboxPolicy
 from forge.sandbox.runner import run_in_sandbox
 from forge.staging.cases import StagingCase
+from forge.staging.manifest import Manifest, ManifestError, describe, input_view, load_manifest
 from forge.staging.stager import run_staging
 from forge.staging.trace import StagingTrace, summarize_traces
 
@@ -113,6 +114,7 @@ class Orchestrator:
         max_forges: int = 2,
         timeout_s: float = 10.0,
         require_tests: bool = False,
+        require_manifest: bool = False,
         ask: Callable[[str], str] = ask_human,
         show: Callable[[str], None] = print,
     ) -> None:
@@ -126,6 +128,7 @@ class Orchestrator:
         self._max_forges = max_forges
         self._timeout_s = timeout_s
         self._require_tests = require_tests
+        self._require_manifest = require_manifest
         self.traces: list[StagingTrace] = []  # every staging run of every attempt, for reports
         self._ask = ask
         self._show = show
@@ -178,6 +181,12 @@ class Orchestrator:
             if not checks.passed:
                 return fail(f"checks failed: {_finding_names(checks.findings)}")
 
+            try:
+                manifest = load_manifest(draft.tool_dir)
+            except ManifestError as exc:
+                return fail(f"checks failed: manifest-invalid ({exc})")
+            if manifest is None and self._require_manifest:
+                return fail("checks failed: manifest-missing")
             if self._require_tests and not draft.tests:
                 return fail("staging failed: the forger wrote no tests")
             try:
@@ -189,12 +198,15 @@ class Orchestrator:
                     timeout_s=self._timeout_s,
                     cases=draft.tests,
                     case_command=_command,
+                    manifest=manifest,
                 )
-            except PolicyError as exc:
+            except (PolicyError, ManifestError) as exc:
                 return fail(f"staging could not start: {exc}")
             self.traces.extend(replace(t, tool=draft.name) for t in report.traces)
             if not report.passed:
                 return fail(f"staging failed: {_finding_names(report.findings)}")
+            if manifest is not None:
+                self._show(f"Manifest: {describe(manifest)}")
             summary = summarize_traces(report.traces)
             if summary:
                 self._show(summary)
@@ -239,16 +251,22 @@ class Orchestrator:
         except RegistryError as exc:
             return fail(str(exc))
         try:
-            policy = SandboxPolicy(
-                image=self._image,
-                tool_dir=tool.path,
-                inputs_dir=self._inputs_dir,
-                timeout_s=self._timeout_s,
-            )
-        except PolicyError as exc:
+            manifest = load_manifest(tool.path)  # the registry copy, already hash-verified above
+        except ManifestError as exc:
+            return fail(f"{action.name} has an invalid manifest: {exc}")
+        if manifest is None and self._require_manifest:
+            return fail(f"{action.name} has no manifest")
+        try:
+            with input_view(manifest, self._inputs_dir) as view:
+                policy = SandboxPolicy(
+                    image=self._image,
+                    tool_dir=tool.path,
+                    inputs_dir=view.path,
+                    timeout_s=self._timeout_s,
+                )
+                result = run_in_sandbox(policy, command)
+        except (PolicyError, ManifestError) as exc:
             return fail(f"could not start: {exc}")
-
-        result = run_in_sandbox(policy, command)
 
         if tree_hash(tool.path) != tool.sha256:
             return fail(f"{action.name} failed hash verification during the run; output discarded")

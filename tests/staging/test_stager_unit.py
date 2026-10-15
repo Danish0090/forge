@@ -133,7 +133,7 @@ def test_cases_run_after_a_clean_staging_run(dirs, fake_sandbox, monkeypatch) ->
     tool, inputs = dirs
     seen: list[tuple] = []
 
-    def fake_cases(image, tool_dir, cases, command_for, *, timeout_s):
+    def fake_cases(image, tool_dir, cases, command_for, *, timeout_s, manifest=None):
         seen.append((image, tool_dir, tuple(cases), command_for, timeout_s))
         return CaseReport((), 1, 1)
 
@@ -176,3 +176,86 @@ def test_cases_need_a_way_to_build_the_command(dirs, fake_sandbox) -> None:
     tool, inputs = dirs
     with pytest.raises(ValueError):
         run_staging(DIGEST, tool, inputs, ["x"], cases=[CASE])
+
+
+# --- the capability manifest limits what staging can see ------------------------------------------------
+
+import forge.staging.stager as stager_mod  # noqa: E402
+from forge.staging.manifest import Manifest, ManifestError  # noqa: E402
+
+
+@pytest.fixture
+def two_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    tool = tmp_path / "tool"
+    tool.mkdir()
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    (inputs / "notes.txt").write_text("one two\n")
+    (inputs / "secret.txt").write_text("TOP SECRET\n")
+    return tool, inputs
+
+
+@pytest.fixture
+def seen_inputs(monkeypatch: pytest.MonkeyPatch):
+    seen: list[dict] = []
+
+    def fake(policy: SandboxPolicy, command: list[str]) -> SandboxResult:
+        mounted = policy.inputs_dir
+        seen.append({"path": mounted, "files": sorted(p.name for p in mounted.rglob("*") if p.is_file())})
+        return ok_result()
+
+    monkeypatch.setattr(stager_mod, "run_in_sandbox", fake)
+    return seen
+
+
+def test_without_a_manifest_staging_mounts_every_input(two_inputs, seen_inputs) -> None:
+    tool, inputs = two_inputs
+    run_staging(DIGEST, tool, inputs, ["x"])
+    assert seen_inputs[0]["path"] == inputs
+    assert seen_inputs[0]["files"] == ["notes.txt", "secret.txt"]
+
+
+def test_with_a_manifest_staging_mounts_only_the_declared_files(two_inputs, seen_inputs) -> None:
+    tool, inputs = two_inputs
+    report = run_staging(DIGEST, tool, inputs, ["x"], manifest=Manifest(("notes.txt",)))
+    assert report.passed
+    assert seen_inputs[0]["files"] == ["notes.txt"]
+    assert seen_inputs[0]["path"] != inputs
+    assert not seen_inputs[0]["path"].exists()  # the view is gone afterwards
+
+
+def test_a_declared_file_that_does_not_exist_is_a_finding_but_the_run_still_happens(two_inputs, seen_inputs) -> None:
+    tool, inputs = two_inputs
+    report = run_staging(DIGEST, tool, inputs, ["x"], manifest=Manifest(("notes.txt", "ghost.txt")))
+    assert [f.check for f in report.findings] == ["staging-manifest-missing-file"]
+    assert "ghost.txt" in report.findings[0].message
+    assert len(seen_inputs) == 1 and len(report.traces) == 1
+
+
+def test_the_real_inputs_are_still_hash_checked_with_a_manifest(two_inputs, monkeypatch: pytest.MonkeyPatch) -> None:
+    tool, inputs = two_inputs
+    monkeypatch.setattr(stager_mod, "run_in_sandbox", lambda policy, command: (inputs / "notes.txt").write_text("tampered") and ok_result())
+    report = run_staging(DIGEST, tool, inputs, ["x"], manifest=Manifest(("notes.txt",)))
+    assert "staging-inputs-modified" in [f.check for f in report.findings]
+
+
+def test_the_manifest_reaches_the_case_runner(two_inputs, seen_inputs, monkeypatch: pytest.MonkeyPatch) -> None:
+    tool, inputs = two_inputs
+    got: dict = {}
+
+    def fake_cases(image, tool_dir, cases, command_for, **kw):
+        got.update(kw)
+        return CaseReport((), 1, 1)
+
+    monkeypatch.setattr(stager_mod, "run_cases", fake_cases)
+    manifest = Manifest(("notes.txt",))
+    run_staging(DIGEST, tool, inputs, ["x"], cases=[CASE], case_command=encode, manifest=manifest)
+    assert got["manifest"] == manifest
+
+
+def test_an_unenforceable_manifest_stops_staging_with_an_error(two_inputs, seen_inputs, tmp_path: Path) -> None:
+    tool, inputs = two_inputs
+    (inputs / "link.txt").symlink_to(tmp_path / "elsewhere.txt")
+    with pytest.raises(ManifestError):
+        run_staging(DIGEST, tool, inputs, ["x"], manifest=Manifest(("link.txt",)))
+    assert seen_inputs == []  # nothing ran
