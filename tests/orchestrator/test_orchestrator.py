@@ -532,3 +532,20 @@ def test_a_tool_registered_without_a_manifest_is_refused_when_one_is_required(tm
     r = strict.run("t")
     call = [h for h in r.history if h.kind == "tool"][0]
     assert not call.ok and "no manifest" in call.text
+
+
+def test_call_tool_is_the_same_path_a_planner_call_takes(tmp_path: Path, inputs: Path, sandbox_calls) -> None:
+    o, reg, _ = build(tmp_path, inputs, ScriptedPlanner([NeedTool("count words"), Finish("done")]), ScriptedForger())
+    o.run("t")
+    sandbox_calls.clear()
+    obs = o.call_tool("word_count", {"file": "log.txt"})
+    assert obs.ok and obs.text == "42\n"
+    assert sandbox_calls[0][1] == ["python", "/app/tool.py", json.dumps({"file": "log.txt"})]
+    assert sandbox_calls[0][0].tool_dir == reg.get("word_count").path
+
+
+def test_call_tool_refuses_unknown_tools_and_bad_names(tmp_path: Path, inputs: Path, sandbox_calls) -> None:
+    o, _, _ = build(tmp_path, inputs, ScriptedPlanner([]), ScriptedForger())
+    assert not o.call_tool("missing", {}).ok
+    assert not o.call_tool("../evil", {}).ok
+    assert sandbox_calls == []

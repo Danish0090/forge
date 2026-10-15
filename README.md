@@ -164,12 +164,24 @@ Needs Docker and an interactive terminal (the approval gate refuses anything els
 
 Known limit: the static scan denies `import sys` and `import os`, so a tool reads its argument with `argparse` (which reads argv itself). The forger prompt says so.
 
+## MCP server (what exists now)
+
+An MCP client (an agent app that speaks the Model Context Protocol) can use the tools forge has approved. The server ([src/forge/mcpserver/](src/forge/mcpserver/)) runs on the host with FastMCP and talks over stdio. It is an optional extra, because FastMCP brings many packages with it:
+
+    uv sync --extra mcp
+    FORGE_SANDBOX_IMAGE='python@sha256:a6e34c59...' uv run --extra mcp python -m forge.mcpserver \
+        --registry .forge-demo/registry --inputs .forge-demo/inputs      # add --list to only print the tools
+
+- **Only approved tools are exposed.** The server lists what is in the registry and offers no way to forge, approve, edit or revoke a tool. A client can use tools but never create one.
+- **Same protections as the agent's own calls.** Each call goes through the orchestrator's `call_tool`: the registry re-hashes the stored copy, the manifest limits which input files are visible, the tool runs in the Docker sandbox, and the copy is hashed again afterwards. A tool that was tampered with, revoked or has no manifest (with `--require-manifest`) is refused.
+- **Limits.** A tool's output is untrusted text and the MCP client has to treat it as data (descriptions and server instructions say so). A tool approved after the server started appears after a restart. I tested it with a real MCP client over stdio against the real CLI and a real container, not with a specific app such as Claude Desktop.
+
 ## Run the tests
 
     uv run pytest                                                # unit tests, no Docker needed
     FORGE_SANDBOX_IMAGE='python@sha256:a6e34c59...' uv run pytest  # full suite, needs Docker
 
-Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docker daemon isn't running.
+Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docker daemon isn't running. The MCP tests need the extra (`uv run --extra mcp pytest`) and skip without it.
 
 ## Repo layout
 
@@ -182,6 +194,7 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       orchestrator/   orchestrator.py             built, security-critical
       router/         router.py, agents.py        built
       bench/          attacks, redteam, benchmark, tasks (hidden variants, input drifts)    built
+      mcpserver/      server.py, __main__.py (host-side MCP server, optional extra)   built, security-critical
       demo.py                                     live demo CLI
     results/            saved real outputs: attack suite report, an oracle harness check (JSON with staging traces)
     tests/
@@ -192,13 +205,14 @@ Docker tests skip automatically when `FORGE_SANDBOX_IMAGE` is unset or the Docke
       registry/       registration, verification, revoke, tamper cases
       orchestrator/   loop, forge-up-the-ladder, budgets, tamper and failure cases
       bench/          attack catalog, red team, benchmark scoring, hidden set, survival (Docker tests marked)
+      mcpserver/      MCP server with a faked sandbox, plus a real client over stdio (Docker)
       demo/           scripted run with a faked sandbox
       router/         model aliases, key handling, strict reply parsing (fake backend)
       conftest.py     skip logic for Docker tests
 
 ## Glossary
 
-- **MCP (Model Context Protocol):** a standard way for an agent to call tools. FastMCP is a Python library for writing MCP servers. forge does not use MCP yet: today a forged tool is a plain `tool.py` script that reads one JSON argument. MCP servers are planned.
+- **MCP (Model Context Protocol):** a standard way for an agent to call tools. FastMCP is a Python library for writing MCP servers. A forged tool is a plain `tool.py` script that reads one JSON argument; forge serves approved tools to MCP clients through a host-side FastMCP server (see "MCP server").
 - **Capability manifest:** a list of the input files a tool says it needs. forge enforces it by showing the tool only those files.
 - **Container:** an isolated process environment built from an image. Docker runs them.
 - **Digest:** a SHA-256 fingerprint of an image's contents. Pinning by digest means the exact bytes are fixed.

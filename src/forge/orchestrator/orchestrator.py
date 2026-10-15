@@ -157,6 +157,13 @@ class Orchestrator:
                 history.append(Observation("tool", "?", False, "planner returned an unknown action"))
         return RunResult("max_steps", None, tuple(forged), tuple(history))
 
+    def call_tool(self, name: str, args: dict[str, Any]) -> Observation:
+        """Run one registered tool the same way a planner's call runs it: hash check, manifest view, sandbox.
+
+        Used by the MCP server so an outside client gets exactly the same protections, from the same code.
+        """
+        return self._call(CallTool(name, args))
+
     def _acquire(self, need: str) -> tuple[Observation, str | None]:
         """Take one draft up the ladder. Returns the observation and the name if registered."""
 
