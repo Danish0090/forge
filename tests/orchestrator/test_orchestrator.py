@@ -549,3 +549,40 @@ def test_call_tool_refuses_unknown_tools_and_bad_names(tmp_path: Path, inputs: P
     assert not o.call_tool("missing", {}).ok
     assert not o.call_tool("../evil", {}).ok
     assert sandbox_calls == []
+
+
+# --- test fixtures versus the manifest, and what a staging failure says ---------------------------------------
+
+
+def test_a_test_fixture_the_manifest_hides_is_refused_with_a_clear_reason(tmp_path: Path, two_inputs: Path, mounts: Mounts) -> None:
+    hidden = StagingCase(args={"path": "/inputs/e.txt"}, expect="1", files={"e.txt": "x"})
+    planner = ScriptedPlanner([NeedTool("x"), Finish("gave up")])
+    o, reg = build_with_tests(tmp_path, two_inputs, planner, ForgerWithManifestAndTests(MANIFEST_NOTES, (hidden,)), asked=[])
+    r = o.run("t")
+    text = r.history[0].text
+    assert text.startswith("staging failed") and "case 1" in text and "e.txt" in text and "does not declare" in text
+    assert mounts.runs == []  # refused before anything ran
+
+
+def test_fixtures_that_use_declared_names_run_normally(tmp_path: Path, two_inputs: Path, mounts: Mounts, case_sandbox) -> None:
+    ok = StagingCase(args={"path": "/inputs/notes.txt"}, expect="42", files={"notes.txt": "a b\n"})
+    planner = ScriptedPlanner([NeedTool("x"), Finish("ok")])
+    o, reg = build_with_tests(tmp_path, two_inputs, planner, ForgerWithManifestAndTests(MANIFEST_NOTES, (ok,)), asked=[])
+    assert o.run("t").forged == ("word_count",)
+
+
+def test_a_failed_test_says_what_was_expected_and_what_came_out(tmp_path: Path, inputs: Path, sandbox_calls, case_sandbox) -> None:
+    case_sandbox.stdout = "7\n"
+    planner = ScriptedPlanner([NeedTool("count words"), Finish("gave up")])
+    o, reg = build_with_tests(tmp_path, inputs, planner, ForgerWithTests((OWN_CASE,)), asked=[])
+    text = o.run("t").history[0].text
+    assert "staging-test-failed" in text and "expected '42'" in text and "got '7'" in text
+
+
+class ForgerWithManifestAndTests(ForgerWithManifest):
+    def __init__(self, manifest: str, tests: tuple) -> None:
+        super().__init__(manifest)
+        self.tests = tests
+
+    def forge(self, need: str, workdir: Path) -> ToolDraft:
+        return replace(super().forge(need, workdir), tests=self.tests)

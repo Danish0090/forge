@@ -196,6 +196,11 @@ class Orchestrator:
                 return fail("checks failed: manifest-missing")
             if self._require_tests and not draft.tests:
                 return fail("staging failed: the forger wrote no tests")
+            if manifest is not None:
+                for n, case in enumerate(draft.tests, start=1):
+                    hidden = sorted(set(case.files) - set(manifest.reads))
+                    if hidden:
+                        return fail(f"staging failed: test case {n} uses fixture {hidden[0]!r} that the manifest does not declare")
             try:
                 report = run_staging(
                     self._image,
@@ -211,7 +216,7 @@ class Orchestrator:
                 return fail(f"staging could not start: {exc}")
             self.traces.extend(replace(t, tool=draft.name) for t in report.traces)
             if not report.passed:
-                return fail(f"staging failed: {_finding_names(report.findings)}")
+                return fail(f"staging failed: {_finding_names(report.findings)} ({report.findings[0].message[:160]})")
             if manifest is not None:
                 self._show(f"Manifest: {describe(manifest)}")
             summary = summarize_traces(report.traces)

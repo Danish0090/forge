@@ -47,6 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--tasks", help="comma-separated task ids (default: all)")
     b.add_argument("--auto-approve", action="store_true", help="answer yes at the human gate; recorded in the report")
     b.add_argument("--runs", type=int, default=1, help=f"repeat the selection N times (1 to {benchmark.MAX_RUNS})")
+    b.add_argument("--max-tokens", type=int, help="cap on a model reply, 1000 to 32000 (default 4000); reasoning models may need more")
     b.add_argument("--tier", help="easy or hard (default: all tasks)")
     b.add_argument("--require-tests", action="store_true", help="a tool must come with forger-written tests that pass in staging")
     b.add_argument("--require-manifest", action="store_true", help="a tool must declare the input files it reads; it sees only those")
@@ -89,6 +90,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(attacks.format_report(results))
         return 0 if not attacks.summarize(results)["unexpected"] else 1
 
+    if args.max_tokens is not None and not 1_000 <= args.max_tokens <= 32_000:
+        print("--max-tokens must be between 1000 and 32000", file=sys.stderr)
+        return 2
     if not 1 <= args.runs <= benchmark.MAX_RUNS:
         print(f"--runs must be between 1 and {benchmark.MAX_RUNS}", file=sys.stderr)
         return 2
@@ -105,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         factory = (
             benchmark.oracle_factory
             if args.model == "oracle"
-            else benchmark.model_factory(args.model, allow_paid=args.allow_paid, max_cost_usd=args.max_cost)
+            else benchmark.model_factory(args.model, allow_paid=args.allow_paid, max_cost_usd=args.max_cost, max_tokens=args.max_tokens)
         )
     except RouterError as exc:
         print(f"model error: {exc}", file=sys.stderr)

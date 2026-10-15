@@ -73,8 +73,12 @@ class ModelAgents:
     """Builds a model-backed planner and forger per task. One router is shared, so the spend cap
     covers the whole benchmark run."""
 
-    def __init__(self, model: str, *, allow_paid: bool = False, max_cost_usd: float | None = None) -> None:
-        kwargs = {} if max_cost_usd is None else {"max_cost_usd": max_cost_usd}
+    def __init__(
+        self, model: str, *, allow_paid: bool = False, max_cost_usd: float | None = None, max_tokens: int | None = None
+    ) -> None:
+        kwargs: dict[str, Any] = {} if max_cost_usd is None else {"max_cost_usd": max_cost_usd}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens  # reasoning models spend part of the cap on hidden thinking
         self.router = ModelRouter(model, allow_paid=allow_paid, **kwargs)
 
     def __call__(self, task: Task, input_files: Sequence[str]) -> tuple[Planner, Forger]:
@@ -109,6 +113,7 @@ class Draft:
     description: str
     staging_args: dict[str, object]
     manifest: str = ""  # manifest.json as written, empty when the tool has none
+    tests: tuple[dict[str, object], ...] = ()  # the forger's own test cases, kept so a failed test can be judged
 
 
 class _RecordingForger:
@@ -126,7 +131,8 @@ class _RecordingForger:
             manifest = (draft.tool_dir / "manifest.json").read_text(errors="replace")[:500]
         except OSError:
             manifest = ""
-        self.drafts.append(Draft(draft.name, source, draft.description[:500], dict(draft.staging_args), manifest))
+        tests = tuple({"files": dict(c.files), "args": dict(c.args), "expect": c.expect} for c in draft.tests)
+        self.drafts.append(Draft(draft.name, source, draft.description[:500], dict(draft.staging_args), manifest, tests))
         return draft
 
 

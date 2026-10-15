@@ -51,7 +51,9 @@ Work out "expect" by hand from the fixture, not by running anything. Use differe
 include one edge case (an empty file, a blank line, a tie). Tests are data, not code.
 Also add "manifest": {"reads": [...]}, the input files your tool reads, by name relative to /inputs (for example
 "notes.txt"). Only those files will be visible to your tool, so list every file it opens and nothing else. There is
-no network at all, so never list a domain. Use "reads": [] for a tool that reads no input file."""
+no network at all, so never list a domain. Use "reads": [] for a tool that reads no input file.
+A test's fixture files must use the same names as your manifest "reads", because only declared names are visible
+to the tool: in a test, a fixture replaces the content of a declared file (for example "notes.txt")."""
 
 
 def _json_object(reply: str) -> dict[str, Any]:
@@ -159,6 +161,13 @@ class ModelForger:
             except ManifestError as exc:
                 raise _Unparsable(f"manifest is invalid: {exc}") from None
             manifest_text = json.dumps({"reads": list(manifest.reads), "network": []})
+            for n, case in enumerate(tests, start=1):
+                hidden = sorted(set(case.files) - set(manifest.reads))
+                if hidden:
+                    raise _Unparsable(
+                        f"test {n} uses fixture file {hidden[0]!r} that your manifest does not declare; "
+                        f"fixture files must use names from reads {list(manifest.reads)}"
+                    )
         tool_dir = workdir.resolve() / f"draft_{name}"
         tool_dir.mkdir()
         (tool_dir / "tool.py").write_text(code)

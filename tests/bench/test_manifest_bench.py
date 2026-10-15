@@ -86,3 +86,60 @@ def test_oracle_gets_every_task_right_when_a_manifest_is_required(sandbox_image:
     assert [(r.task_id, r.failures) for r in results if not r.correct] == []
     assert all(r.forge_attempts == 1 for r in results)
     assert all(r.hidden_passed == r.hidden_total and r.survival_passed == r.survival_total for r in results)
+
+
+# --- drafts keep their test cases, so a failed test can be judged afterwards -------------------------------
+
+
+def test_drafts_record_the_full_test_cases(tmp_path: Path) -> None:
+    rec = benchmark._RecordingForger(benchmark.OracleForger(TASK))
+    rec.forge("need", tmp_path)
+    (case,) = rec.drafts[0].tests
+    assert case["files"] == TASK.variants[0].files
+    assert case["args"] == {"path": "/inputs/notes.txt"}
+    assert case["expect"] == TASK.variants[0].expected
+    json.dumps(case)  # plain data, so it serialises into the --out report
+
+
+def test_a_draft_with_no_tests_records_an_empty_list(tmp_path: Path) -> None:
+    class NoTests(benchmark.OracleForger):
+        def forge(self, need: str, workdir: Path):  # type: ignore[no-untyped-def]
+            import dataclasses
+
+            return dataclasses.replace(super().forge(need, workdir), tests=())
+
+    rec = benchmark._RecordingForger(NoTests(TASK))
+    rec.forge("need", tmp_path)
+    assert rec.drafts[0].tests == ()
+
+
+# --- --max-tokens: forger replies now carry code, tests and a manifest, so the cap is adjustable -----------------
+
+
+def test_model_agents_pass_max_tokens_to_the_router() -> None:
+    agents = benchmark.ModelAgents("nemotron", max_tokens=9000)
+    assert agents.router._max_tokens == 9000  # noqa: SLF001
+
+
+def test_the_default_cap_is_unchanged() -> None:
+    assert benchmark.ModelAgents("nemotron").router._max_tokens == 4000  # noqa: SLF001
+
+
+def test_cli_passes_max_tokens_and_validates_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORGE_SANDBOX_IMAGE", DIGEST)
+    monkeypatch.setattr("forge.bench.__main__.docker_ready", lambda: True)
+    seen: dict[str, object] = {}
+
+    def fake_factory(model: str, **kw: object):  # type: ignore[no-untyped-def]
+        seen.update(kw)
+        return benchmark.oracle_factory
+
+    monkeypatch.setattr(benchmark, "model_factory", fake_factory)
+    monkeypatch.setattr(benchmark, "run_benchmark", lambda factory, **kw: [])
+    assert main(["bench", "--model", "nemotron", "--tasks", "word-count", "--max-tokens", "12000"]) == 0
+    assert seen["max_tokens"] == 12000
+    seen.clear()
+    main(["bench", "--model", "nemotron", "--tasks", "word-count"])
+    assert seen["max_tokens"] is None
+    assert main(["bench", "--model", "nemotron", "--tasks", "word-count", "--max-tokens", "10"]) == 2
+    assert main(["bench", "--model", "nemotron", "--tasks", "word-count", "--max-tokens", "999999"]) == 2

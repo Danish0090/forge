@@ -456,3 +456,39 @@ def test_forger_prompt_asks_for_a_manifest_and_says_the_network_is_off(tmp_path:
     system = backend.calls[0]["messages"][0]["content"]
     assert '"manifest"' in system and '"reads"' in system
     assert "only those files" in system.lower() and "no network" in system.lower()
+
+
+# --- test fixtures must use names the manifest declares ----------------------------------------------------
+
+CONSISTENT = {
+    **GOOD,
+    "manifest": {"reads": ["notes.txt"]},
+    "tests": [{"files": {"notes.txt": "one two\n"}, "args": {"path": "/inputs/notes.txt"}, "expect": "2"}],
+}
+
+
+def test_fixtures_that_use_declared_names_are_accepted(tmp_path: Path) -> None:
+    r, _ = router(json.dumps(CONSISTENT))
+    assert len(ModelForger(r).forge("n", tmp_path).tests) == 1
+
+
+def test_a_fixture_the_manifest_does_not_declare_is_retried_with_the_reason(tmp_path: Path) -> None:
+    bad = {**CONSISTENT, "tests": [{"files": {"e.txt": "x"}, "args": {"path": "/inputs/e.txt"}, "expect": "1"}]}
+    r, backend = router(json.dumps(bad), json.dumps(CONSISTENT))
+    draft = ModelForger(r).forge("n", tmp_path)
+    assert len(draft.tests) == 1
+    retry = backend.calls[1]["messages"][1]["content"]
+    assert "e.txt" in retry and "manifest" in retry and "notes.txt" in retry
+
+
+def test_the_check_only_applies_when_there_is_both_a_manifest_and_tests(tmp_path: Path) -> None:
+    no_manifest = {**GOOD, "tests": [{"files": {"anything.txt": "x"}, "args": {}, "expect": "1"}]}
+    r, _ = router(json.dumps(no_manifest))
+    assert len(ModelForger(r).forge("n", tmp_path).tests) == 1
+
+
+def test_prompt_says_fixtures_must_use_manifest_names(tmp_path: Path) -> None:
+    r, backend = router(json.dumps(GOOD))
+    ModelForger(r).forge("n", tmp_path)
+    system = backend.calls[0]["messages"][0]["content"].lower()
+    assert "fixture" in system and "same names" in system and "manifest" in system
