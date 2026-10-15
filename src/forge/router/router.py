@@ -50,6 +50,13 @@ MODELS: dict[str, ModelSpec] = {
     "minimax-m3": ModelSpec("openrouter/minimax/minimax-m3", "OPENROUTER_API_KEY", None, 0.30, 1.20),
     "deepseek-v4-pro": ModelSpec("openrouter/deepseek/deepseek-v4-pro", "OPENROUTER_API_KEY", None, 0.41, 0.82),
     "qwen3-coder": ModelSpec("openrouter/qwen/qwen3-coder", "OPENROUTER_API_KEY", None, 0.30, 1.00),
+    # Closed weights: the owner chose these (2026-10-15) as reference points.
+    "gpt-5.6-sol": ModelSpec("openrouter/openai/gpt-5.6-sol", "OPENROUTER_API_KEY", None, 4.00, 20.00),
+    "claude-opus-5": ModelSpec("openrouter/anthropic/claude-opus-5", "OPENROUTER_API_KEY", None, 5.00, 25.00),
+    # Kept for reproducibility: on 2026-10-15 OpenRouter returned finish_reason content_filter with no
+    # text for the forger prompt on this model (and on claude-fable-5.1), so it cannot be a forger.
+    "claude-opus-5.5": ModelSpec("openrouter/anthropic/claude-opus-5.5", "OPENROUTER_API_KEY", None, 4.00, 20.00),
+    "gemini-4-argon": ModelSpec("openrouter/google/gemini-4-argon", "OPENROUTER_API_KEY", None, 2.00, 10.00),
 }
 
 DEFAULT_MAX_COST_USD = 0.50

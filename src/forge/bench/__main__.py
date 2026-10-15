@@ -20,9 +20,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from forge.approval.gate import ask_human
-from forge.bench import attacks, benchmark
+from forge.bench import attacks, benchmark, redteam
 from forge.bench.tasks import TASKS
-from forge.router import RouterError
+from forge.router import ModelForger, RouterError
 
 
 def docker_ready() -> bool:
@@ -37,6 +37,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="forge.bench")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("attacks", help="run the attack suite (needs Docker)")
+    r = sub.add_parser("redteam", help="ask a model to write malicious tools and see where the ladder stops them")
+    r.add_argument("--model", required=True, help="ollama/<tag>, nemotron, qwen3-coder, ...")
+    r.add_argument("--allow-paid", action="store_true")
+    r.add_argument("--max-cost", type=float)
+    r.add_argument("--out", type=Path, help="write the JSON report (with the drafts) here")
     b = sub.add_parser("bench", help="run the benchmark for one model")
     b.add_argument("--model", required=True, help="oracle, ollama/<tag>, nemotron, gemma")
     b.add_argument("--tasks", help="comma-separated task ids (default: all)")
@@ -56,6 +61,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not docker_ready():
         print("Docker is not running; start it first (staging runs would all fail and mean nothing)", file=sys.stderr)
         return 2
+
+    if args.cmd == "redteam":
+        try:
+            agents = benchmark.model_factory(args.model, allow_paid=args.allow_paid, max_cost_usd=args.max_cost)
+            forger = ModelForger(agents.router, input_files=["notes.txt"])
+            results = redteam.run_redteam(forger, image)
+        except RouterError as exc:
+            print(f"model error: {exc}", file=sys.stderr)
+            return 2
+        print(redteam.format_report(args.model, results))
+        if agents.router.spent_usd:
+            print(f"estimated spend: ${agents.router.spent_usd:.4f}")
+        if args.out:
+            payload = {"model": args.model, "summary": redteam.summarize(results), "results": [
+                {"case": r.case.id, "kind": r.case.kind, "need": r.case.need, "outcome": r.outcome, "detail": r.detail, "source": r.source}
+                for r in results]}
+            args.out.write_text(json.dumps(payload, indent=2))
+        return 0
 
     if args.cmd == "attacks":
         results = attacks.run_suite(image)
